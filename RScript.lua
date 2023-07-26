@@ -1,5 +1,5 @@
 -------------------------------
---- Author: Rostal#9913
+--- Author: Rostal
 -------------------------------
 
 local tab_root = gui.add_tab("RScript")
@@ -73,7 +73,15 @@ local function DRAW_LINE(start_pos, end_pos, colour)
         colour.r, colour.g, colour.b, colour.a)
 end
 
-function teleport(x, y, z, heading)
+local function toast(text)
+    gui.show_message("RScript", text)
+end
+
+-----------------------------
+-- Local Player Functions
+-----------------------------
+
+local function teleport(x, y, z, heading)
     local ent = GET_VEHICLE_PED_IS_IN(PLAYER.PLAYER_PED_ID())
     if ent == 0 then
         ent = PLAYER.PLAYER_PED_ID()
@@ -85,7 +93,7 @@ function teleport(x, y, z, heading)
     end
 end
 
-function teleport2(coords, heading)
+local function teleport2(coords, heading)
     local ent = GET_VEHICLE_PED_IS_IN(PLAYER.PLAYER_PED_ID())
     if ent == 0 then
         ent = PLAYER.PLAYER_PED_ID()
@@ -97,9 +105,9 @@ function teleport2(coords, heading)
     end
 end
 
-local function toast(text)
-    gui.show_message("RScript", text)
-end
+-------------------------
+-- Entity Functions
+-------------------------
 
 local function request_control(entity, timeout)
     timeout = timeout or 5
@@ -118,15 +126,55 @@ local function request_control(entity, timeout)
     return NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity)
 end
 
+local function get_entity_owner(entity)
+    if NETWORK.NETWORK_IS_SESSION_STARTED() then
+        local ptr = memory.handle_to_ptr(entity)
+        local netObject = ptr:add(0xD0):deref()
+        if netObject:is_null() then
+            return -1
+        end
+        local owner_id = netObject:add(0x49):get_byte()
+        return owner_id
+    end
+    return PLAYER.PLAYER_ID()
+end
+
 local function set_entity_godmode(ent, toggle)
     ENTITY.SET_ENTITY_INVINCIBLE(ent, toggle)
     ENTITY.SET_ENTITY_PROOFS(ent, toggle, toggle, toggle, toggle, toggle, toggle, toggle, toggle)
     ENTITY.SET_ENTITY_CAN_BE_DAMAGED(ent, not toggle)
 end
 
+local function delete_entity(ent)
+    if ENTITY.DOES_ENTITY_EXIST(ent) then
+        ENTITY.DETACH_ENTITY(ent, true, true)
+        ENTITY.SET_ENTITY_VISIBLE(ent, false, false)
+        NETWORK.NETWORK_SET_ENTITY_ONLY_EXISTS_FOR_PARTICIPANTS(ent, true)
+        ENTITY.SET_ENTITY_COORDS_NO_OFFSET(ent, 0.0, 0.0, -1000.0, false, false, false)
+        ENTITY.SET_ENTITY_COLLISION(ent, false, false)
+        ENTITY.SET_ENTITY_AS_MISSION_ENTITY(ent, true, true)
+        ENTITY.SET_ENTITY_AS_NO_LONGER_NEEDED(ent)
+        ENTITY.DELETE_ENTITY(memory.handle_to_ptr(ent))
+    end
+end
+
+-------------------------
+-- Vehicle Functions
+-------------------------
+
 local function get_vehicle_display_name_by_hash(hash)
     local label_name = VEHICLE.GET_DISPLAY_NAME_FROM_VEHICLE_MODEL(hash)
     return HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(label_name)
+end
+
+local function fix_vehicle(vehicle)
+    VEHICLE.SET_VEHICLE_FIXED(vehicle)
+    VEHICLE.SET_VEHICLE_DEFORMATION_FIXED(vehicle)
+    VEHICLE.SET_VEHICLE_DIRT_LEVEL(vehicle, 0.0)
+    VEHICLE.SET_VEHICLE_ENGINE_HEALTH(vehicle, 1000.0)
+
+    VEHICLE.SET_VEHICLE_UNDRIVEABLE(vehicle, false)
+    VEHICLE.SET_VEHICLE_IS_CONSIDERED_BY_PLAYER(vehicle, true)
 end
 
 local function upgrade_vehicle(vehicle)
@@ -212,6 +260,9 @@ local function unlock_vehicle_doors(vehicle)
     VEHICLE.SET_DONT_ALLOW_PLAYER_TO_ENTER_VEHICLE_IF_LOCKED_FOR_PLAYER(vehicle, false)
 end
 
+-------------------------
+-- Page Functions
+-------------------------
 
 local function check_match(ent)
     -- 任务实体
@@ -300,6 +351,10 @@ local function get_ent_button_info(ent)
         end
     end
 
+    if NETWORK.NETWORK_IS_SESSION_STARTED() then
+        info = info .. ", 控制权: " .. PLAYER.GET_PLAYER_NAME(get_entity_owner(ent))
+    end
+
     return info
 end
 
@@ -334,10 +389,14 @@ tab_root:add_button("获取载具列表", function()
             end
 
             tab_manage_vehicle:add_button(button_name, function()
-                if ent ~= ctrl_vehicle then
-                    reset_manage_vehicle_checkbox()
+                if ENTITY.DOES_ENTITY_EXIST(ent) then
+                    if ent ~= ctrl_vehicle then
+                        reset_manage_vehicle_checkbox()
+                    end
+                    ctrl_vehicle = ent
+                else
+                    gui.show_message("通知", "该实体已不存在")
                 end
-                ctrl_vehicle = ent
             end)
 
             tab_manage_vehicle:add_sameline()
@@ -379,9 +438,9 @@ vehicle_manage.checkbox.disable_driver:set_enabled(true)
 
 
 
---------------------------
+---------------------------
 -- Manage Vehicle Page
---------------------------
+---------------------------
 
 local function manage_vehicle_checkbox(name, toggle_on, toggle_off)
     if ctrl_page.checkbox[name]:is_enabled() then
@@ -441,8 +500,10 @@ function generate_manage_vehicle_page()
     ctrl_page.text.distance = tab_manage_vehicle:add_text("距离: 0.0")
     tab_manage_vehicle:add_sameline()
     ctrl_page.text.speed = tab_manage_vehicle:add_text("速度: 0.0")
+    tab_manage_vehicle:add_sameline()
+    ctrl_page.text.owner = tab_manage_vehicle:add_text("控制权: 无")
 
-
+    ----------
     tab_manage_vehicle:add_separator()
     tab_manage_vehicle:add_text("实体选项")
     ctrl_page.checkbox["godmode"] = tab_manage_vehicle:add_checkbox("无敌")
@@ -496,6 +557,15 @@ function generate_manage_vehicle_page()
             end
         end
     end)
+    tab_manage_vehicle:add_sameline()
+    tab_manage_vehicle:add_button("删除", function()
+        if ENTITY.DOES_ENTITY_EXIST(ctrl_vehicle) then
+            if PED.IS_PED_IN_VEHICLE(PLAYER.PLAYER_PED_ID(), ctrl_vehicle, true) then
+                SET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID(), ENTITY.GET_ENTITY_COORDS(ctrl_vehicle))
+            end
+            delete_entity(ctrl_vehicle)
+        end
+    end)
 
     ctrl_page.input.health = tab_manage_vehicle:add_input_int("血量")
     ctrl_page.input.health:set_value(1000.0)
@@ -517,7 +587,7 @@ function generate_manage_vehicle_page()
         end
     end)
 
-
+    ----------
     tab_manage_vehicle:add_separator()
     tab_manage_vehicle:add_text("传送选项")
     ctrl_page.input.tp_y = tab_manage_vehicle:add_input_float("前/后")
@@ -547,7 +617,7 @@ function generate_manage_vehicle_page()
         end
     end)
 
-
+    ----------
     tab_manage_vehicle:add_separator()
     tab_manage_vehicle:add_text("载具选项")
     tab_manage_vehicle:add_button("传送进载具", function()
@@ -570,13 +640,25 @@ function generate_manage_vehicle_page()
             PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), ctrl_vehicle, -1)
         end
     end)
+    tab_manage_vehicle:add_sameline()
+    tab_manage_vehicle:add_button("传送进副驾驶位", function()
+        if ENTITY.DOES_ENTITY_EXIST(ctrl_vehicle) then
+            if VEHICLE.GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS(ctrl_vehicle) > 0 then
+                local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ctrl_vehicle, 0)
+                if ENTITY.IS_ENTITY_A_PED(ped) then
+                    local coords = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(ped, 0.0, 0.0, 3.0)
+                    SET_ENTITY_COORDS(ped, coords)
+                end
+                PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), ctrl_vehicle, 0)
+            else
+                gui.show_message("传送进副驾驶位", "载具无副驾驶位")
+            end
+        end
+    end)
 
     tab_manage_vehicle:add_button("修复载具", function()
         if ENTITY.DOES_ENTITY_EXIST(ctrl_vehicle) then
-            VEHICLE.SET_VEHICLE_FIXED(ctrl_vehicle)
-            VEHICLE.SET_VEHICLE_DEFORMATION_FIXED(ctrl_vehicle)
-            VEHICLE.SET_VEHICLE_DIRT_LEVEL(ctrl_vehicle, 0.0)
-            VEHICLE.SET_VEHICLE_ENGINE_HEALTH(ctrl_vehicle, 1000.0)
+            fix_vehicle(ctrl_vehicle)
         end
     end)
     tab_manage_vehicle:add_sameline()
@@ -589,6 +671,12 @@ function generate_manage_vehicle_page()
     tab_manage_vehicle:add_button("强化载具", function()
         if ENTITY.DOES_ENTITY_EXIST(ctrl_vehicle) then
             strong_vehicle(ctrl_vehicle)
+        end
+    end)
+    tab_manage_vehicle:add_sameline()
+    tab_manage_vehicle:add_button("平放载具", function()
+        if ENTITY.DOES_ENTITY_EXIST(ctrl_vehicle) then
+            VEHICLE.SET_VEHICLE_ON_GROUND_PROPERLY(ctrl_vehicle, 5.0)
         end
     end)
 
@@ -704,7 +792,7 @@ function generate_manage_vehicle_page()
         end
     end)
 
-
+    ----------
     tab_manage_vehicle:add_separator()
     tab_manage_vehicle:add_text("载具列表")
 end
@@ -729,6 +817,7 @@ script.register_looped("RScript_Manage_Vehicle", function()
             ctrl_page.text.health:set_text(string.format("血量: %d/%d",
                 ENTITY.GET_ENTITY_HEALTH(ent), ENTITY.GET_ENTITY_MAX_HEALTH(ent)))
             ctrl_page.text.speed:set_text("速度: " .. string.format("%.4f", ENTITY.GET_ENTITY_SPEED(ent)))
+            ctrl_page.text.owner:set_text("控制权: " .. PLAYER.GET_PLAYER_NAME(get_entity_owner(ent)))
 
 
             ---- 实体选项 ----
