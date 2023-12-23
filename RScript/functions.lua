@@ -556,6 +556,59 @@ function get_entity_owner(entity)
 end
 
 ----------------------------------------
+-- Raycast Functions
+----------------------------------------
+
+function rotation_to_direction(rotation)
+    local x = (3.14159265359 / 180) * rotation.x
+    local z = (3.14159265359 / 180) * rotation.z
+    local num = math.abs(math.cos(x))
+    return {
+        x = -math.sin(z) * num,
+        y = math.cos(z) * num,
+        z = math.sin(x)
+    }
+end
+
+function get_offset_from_cam(distance)
+    local cam_coords = CAM.GET_GAMEPLAY_CAM_COORD()
+    local rot = CAM.GET_GAMEPLAY_CAM_ROT(2)
+    local dir = rotation_to_direction(rot)
+
+    return {
+        x = cam_coords.x + dir.x * distance,
+        y = cam_coords.y + dir.y * distance,
+        z = cam_coords.z + dir.z * distance,
+    }
+end
+
+function get_raycast_result(distance)
+    distance = distance or 1500.0
+
+    local cam_coords = CAM.GET_FINAL_RENDERED_CAM_COORD()
+    local offset = get_offset_from_cam(distance)
+
+    local handle = SHAPETEST.START_EXPENSIVE_SYNCHRONOUS_SHAPE_TEST_LOS_PROBE(
+        cam_coords.x, cam_coords.y, cam_coords.z,
+        offset.x, offset.y, offset.z,
+        -1,
+        0,
+        3) -- SCRIPT_SHAPETEST_OPTION_IGNORE_GLASS | SCRIPT_SHAPETEST_OPTION_IGNORE_SEE_THROUGH
+
+    local status, hit, endCoords, surfaceNormal, entityHit = SHAPETEST.GET_SHAPE_TEST_RESULT(handle, nil, nil, nil, nil)
+    if status ~= 2 then
+        return {}
+    end
+
+    return {
+        hit = hit,
+        endCoords = endCoords,
+        surfaceNormal = surfaceNormal,
+        entityHit = entityHit
+    }
+end
+
+----------------------------------------
 -- Misc Functions
 ----------------------------------------
 
@@ -614,6 +667,46 @@ end
 
 function notify(title, message)
     gui.show_message("[RScript] " .. title, message)
+end
+
+function draw_string(text, x, y, scale, font)
+    HUD.BEGIN_TEXT_COMMAND_DISPLAY_TEXT("STRING")
+    HUD.SET_TEXT_FONT(font or 0)
+    HUD.SET_TEXT_SCALE(scale, scale)
+    HUD.SET_TEXT_DROP_SHADOW()
+    HUD.SET_TEXT_WRAP(0.0, 1.0)
+    HUD.SET_TEXT_DROPSHADOW(1, 0, 0, 0, 0)
+    HUD.SET_TEXT_OUTLINE()
+    HUD.SET_TEXT_EDGE(1, 0, 0, 0, 0)
+    HUD.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME(text)
+    HUD.END_TEXT_COMMAND_DISPLAY_TEXT(x, y, 0)
+end
+
+function draw_crosshair()
+    HUD.BEGIN_TEXT_COMMAND_DISPLAY_TEXT("STRING")
+    HUD.SET_TEXT_FONT(0)
+    HUD.SET_TEXT_SCALE(1.0, 0.5)
+    HUD.SET_TEXT_CENTRE(true)
+    HUD.SET_TEXT_OUTLINE()
+    HUD.SET_TEXT_COLOUR(255, 255, 255, 255)
+    HUD.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME("·")
+    HUD.END_TEXT_COMMAND_DISPLAY_TEXT(0.49997, 0.478, 0)
+end
+
+----------------------------------------
+-- Table Functions
+----------------------------------------
+
+function reverse_ped_hash(hash)
+    return T.PedHashTable[hash] or ""
+end
+
+function reverse_vehicle_hash(hash)
+    return T.VehicleHashTable[hash] or ""
+end
+
+function reverse_weapon_hash(hash)
+    return T.WeaponHashTable[hash] or ""
 end
 
 ----------------------------------------

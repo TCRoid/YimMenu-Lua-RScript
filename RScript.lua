@@ -2,6 +2,8 @@
 --- Author: Rostal
 -------------------------------
 
+require("RScript.tables")
+
 require("RScript.functions")
 
 
@@ -12,53 +14,6 @@ end
 local function print(text)
     log.info(tostring(text))
 end
-
-
-local VehicleRadioStation <const> = {
-    "OFF",
-    "RADIO_11_TALK_02",               -- Blaine County Radio
-    "RADIO_12_REGGAE",                -- The Blue Ark
-    "RADIO_13_JAZZ",                  -- Worldwide FM
-    "RADIO_14_DANCE_02",              -- FlyLo FM
-    "RADIO_15_MOTOWN",                -- The Lowdown 9.11
-    "RADIO_20_THELAB",                -- The Lab
-    "RADIO_16_SILVERLAKE",            -- Radio Mirror Park
-    "RADIO_17_FUNK",                  -- Space 103.2
-    "RADIO_18_90S_ROCK",              -- Vinewood Boulevard Radio
-    "RADIO_21_DLC_XM17",              -- Blonded Los Santos 97.8 FM
-    "RADIO_22_DLC_BATTLE_MIX1_RADIO", -- Los Santos Underground Radio
-    "RADIO_23_DLC_XM19_RADIO",        -- iFruit Radio
-    "RADIO_19_USER",                  -- Self Radio
-    "RADIO_01_CLASS_ROCK",            -- Los Santos Rock Radio
-    "RADIO_02_POP",                   -- Non-Stop-Pop FM
-    "RADIO_03_HIPHOP_NEW",            -- Radio Los Santos
-    "RADIO_04_PUNK",                  -- Channel X
-    "RADIO_06_COUNTRY",               -- Rebel Radio
-    "RADIO_07_DANCE_01",              -- Soulwax FM
-    "RADIO_08_MEXICAN",               -- East Los FM
-    "RADIO_09_HIPHOP_OLD",            -- West Coast Classics
-    "RADIO_37_MOTOMAMI",              -- MOTOMAMI Los Santos
-    "RADIO_05_TALK_01",               -- West Coast Talk Radio
-    "RADIO_36_AUDIOPLAYER",           -- Media Player
-    "RADIO_35_DLC_HEI4_MLR",          -- The Music Locker
-    "RADIO_34_DLC_HEI4_KULT",         -- Kult FM
-    "RADIO_27_DLC_PRHEI4",            -- Still Slipping Los Santos
-}
-
-local CommonWeapons <const> = {
-    joaat("WEAPON_KNIFE"),
-    joaat("WEAPON_APPISTOL"),
-    joaat("WEAPON_MICROSMG"),
-    joaat("WEAPON_SPECIALCARBINE"),
-    joaat("WEAPON_ASSAULTSHOTGUN"),
-    joaat("WEAPON_MINIGUN"),
-    joaat("WEAPON_HOMINGLAUNCHER"),
-    joaat("WEAPON_RPG"),
-    joaat("WEAPON_RAILGUN"),
-    joaat("WEAPON_GRENADE"),
-    joaat("WEAPON_SMOKEGRENADE"),
-    joaat("WEAPON_MOLOTOV"),
-}
 
 
 --------------------------------
@@ -102,6 +57,9 @@ tab_root:add_button("恢复默认受伤倍数", function()
 end)
 tab_root:add_separator()
 
+tabs.add_checkbox(tab_root, "步行时人称视角快捷切换", MainTab, false, "第一人称视角和第三人称(近距离)视角快捷切换")
+tab_root:add_separator()
+
 ----------------
 -- 载具
 ----------------
@@ -123,7 +81,7 @@ tab_root:add_sameline()
 tabs.add_checkbox(tab_root, "无限动能回收加速", MainTab)
 tab_root:add_sameline()
 tabs.add_toggle_button(tab_root, "电台只播放音乐", MainToggle, false, function(toggle)
-    for _, stationName in pairs(VehicleRadioStation) do
+    for _, stationName in pairs(T.VehicleRadioStations) do
         AUDIO.SET_RADIO_STATION_MUSIC_ONLY(stationName, toggle)
     end
 end)
@@ -253,7 +211,7 @@ tab_root:add_button("友方NPC 给予武器", function()
     for _, ped in pairs(entities.get_all_peds_as_handles()) do
         if not ENTITY.IS_ENTITY_DEAD(ped) and not PED.IS_PED_A_PLAYER(ped) then
             if is_friendly_ped(ped) then
-                for _, weaponHash in pairs(CommonWeapons) do
+                for _, weaponHash in pairs(T.CommonWeapons) do
                     WEAPON.GIVE_WEAPON_TO_PED(ped, weaponHash, -1, false, false)
                 end
             end
@@ -378,6 +336,8 @@ tab_mission:add_button("打开恐霸电脑", function()
 end)
 tab_mission:add_sameline()
 tabs.add_checkbox(tab_mission, "跳过NPC对话", MissionTab)
+tab_mission:add_sameline()
+tabs.add_checkbox(tab_mission, "自动收集财物", MissionTab, false, "模拟鼠标左键点击拿取财物")
 tab_mission:add_separator()
 
 ----------------
@@ -706,6 +666,34 @@ tab_mission:add_button("雷克卓摩托车 升级无敌", function()
     end)
     notify("", "完成！\n数量: " .. i)
 end)
+tab_mission:add_separator()
+
+----------------
+-- 佩里科岛抢劫
+----------------
+
+tab_mission:add_text("<< 佩里科岛抢劫 >>")
+tab_mission:add_button("摧毁主要目标玻璃柜、保险箱 (会在豪宅外生成主要目标包裹)", function()
+    get_mission_entities_by_hash("object", { 2580434079, 1098122770 }, function(ent)
+        if request_control2(ent) then
+            SET_ENTITY_HEALTH(ent, 0)
+
+            notify("", "完成！")
+        end
+    end)
+end)
+tab_mission:add_sameline()
+tab_mission:add_button("主要目标掉落包裹 传送到我", function()
+    local blip = HUD.GET_NEXT_BLIP_INFO_ID(765)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
+        if ENTITY.DOES_ENTITY_EXIST(ent) then
+            if request_control2(ent) then
+                tp_entity_to_me(ent)
+            end
+        end
+    end
+end)
 
 
 --#endregion
@@ -755,6 +743,8 @@ function manage_entity.gui.info(tab, entity_type)
     gui_table["hash"] = tab:add_text("Hash: 0")
     tab:add_sameline()
     gui_table["index"] = tab:add_text("Index: 0")
+    tab:add_sameline()
+    gui_table["model"] = tab:add_text("Model: 0")
     gui_table["coords"] = tab:add_text("坐标: x = 0.0, y = 0.0, z = 0.0")
     gui_table["health"] = tab:add_text("血量: 0/0")
     tab:add_sameline()
@@ -1168,7 +1158,7 @@ function manage_entity.gui.ped(tab)
     tab:add_button("给予武器", function()
         local ent = manage_entity[entity_type].ent
         if ENTITY.DOES_ENTITY_EXIST(ent) then
-            for _, weaponHash in pairs(CommonWeapons) do
+            for _, weaponHash in pairs(T.CommonWeapons) do
                 WEAPON.GIVE_WEAPON_TO_PED(ent, weaponHash, -1, false, false)
             end
         end
@@ -1228,8 +1218,10 @@ function manage_entity.gui.update_info(entity_type)
     gui_table["owner"]:set_text("控制权: " .. PLAYER.GET_PLAYER_NAME(get_entity_owner(ent)))
 
     if entity_type == "vehicle" then
+        gui_table["model"]:set_text("Model: " .. reverse_vehicle_hash(hash))
         gui_table["display_name"]:set_text("载具: " .. get_vehicle_display_name_by_hash(hash))
     elseif entity_type == "ped" then
+        gui_table["model"]:set_text("Model: " .. reverse_ped_hash(hash))
         local ped_veh = GET_VEHICLE_PED_IS_IN(ent)
         if ped_veh ~= 0 then
             gui_table["display_name"]:set_text("载具: " .. get_vehicle_display_name_by_hash(ent))
@@ -1300,7 +1292,12 @@ function manage_entity.get_entity_info(ent, index)
             end
         end
     else
-        name = name .. hash
+        local ped_name = reverse_ped_hash(hash)
+        if ped_name ~= "" then
+            name = name .. ped_name
+        else
+            name = name .. hash
+        end
     end
 
     if ENTITY.IS_ENTITY_A_PED(ent) then
@@ -1510,6 +1507,92 @@ tabs.add_checkbox(tab_manage_entity, "禁用筛选: 载具司机", ManageEntityT
 
 
 --------------------------------
+-- Debug Tab
+--------------------------------
+
+local tab_debug <const> = tab_root:add_tab(" > Debug")
+
+local DebugTab = {}
+
+tabs.add_checkbox(tab_debug, "RPG爆炸准星位置", DebugTab, false, "E键使用")
+tab_debug:add_sameline()
+tabs.add_checkbox(tab_debug, "署名爆炸", DebugTab)
+
+tabs.add_checkbox(tab_debug, "RPG射击准星位置", DebugTab, false, "E键使用")
+tab_debug:add_sameline()
+tabs.add_checkbox(tab_debug, "署名射击", DebugTab)
+
+
+
+script.register_looped("RScript_Debug", function(script_util)
+    if DebugTab["RPG爆炸准星位置"]:is_enabled() then
+        draw_crosshair()
+
+        local result = get_raycast_result(1500.0)
+        if result.hit then
+            -- local line_colour = { r = 255, g = 0, b = 255, a = 255 }
+            -- local coords = result.endCoords
+            -- local my_coords = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
+
+            -- local ent = result.entityHit
+            -- if ENTITY.DOES_ENTITY_EXIST(ent) and ENTITY.GET_ENTITY_TYPE(ent) > 0 then
+            --     line_colour = { r = 0, g = 255, b = 0, a = 255 }
+            -- end
+
+            -- DRAW_LINE(my_coords, coords, line_colour)
+
+
+            if PAD.IS_CONTROL_PRESSED(0, 51) then
+                local coords = result.endCoords
+
+                local explosion_type = 4 -- EXP_TAG_ROCKET
+
+                if DebugTab["署名爆炸"]:is_enabled() then
+                    FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(),
+                        coords.x, coords.y, coords.z, explosion_type,
+                        1000.0, true, false, 0.0)
+                else
+                    FIRE.ADD_EXPLOSION(coords.x, coords.y, coords.z, explosion_type,
+                        1000.0, true, false, 0.0, false)
+                end
+
+                script_util:sleep(100)
+            end
+        end
+    end
+
+    if DebugTab["RPG射击准星位置"]:is_enabled() then
+        draw_crosshair()
+
+        if PAD.IS_CONTROL_PRESSED(0, 51) then
+            local start_pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
+            local end_pos = get_offset_from_cam(1500.0)
+
+            local weapon_hash = 2982836145 -- WEAPON_RPG
+            local owner = 0
+            if DebugTab["署名射击"]:is_enabled() then
+                owner = PLAYER.PLAYER_PED_ID()
+            end
+            local ignore_ent = get_user_vehicle(false)
+            if ignore_ent == 0 then
+                ignore_ent = PLAYER.PLAYER_PED_ID()
+            end
+
+            MISC.SHOOT_SINGLE_BULLET_BETWEEN_COORDS_IGNORE_ENTITY(
+                start_pos.x, start_pos.y, start_pos.z + 2.0,
+                end_pos.x, end_pos.y, end_pos.z,
+                1000.0, true, weapon_hash, owner,
+                true, true, 2000,
+                ignore_ent, 0)
+
+            script_util:sleep(100)
+        end
+    end
+end)
+
+
+
+--------------------------------
 -- Loop Script
 --------------------------------
 
@@ -1530,6 +1613,13 @@ script.register_looped("RScript_Main", function()
             PLAYER.SET_PLAYER_MELEE_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
             PLAYER.SET_PLAYER_VEHICLE_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
             PLAYER.SET_PLAYER_WEAPON_TAKEDOWN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
+        end
+    end
+    if MainTab["步行时人称视角快捷切换"]:is_enabled() then
+        if CAM.IS_FOLLOW_PED_CAM_ACTIVE() then
+            if CAM.GET_FOLLOW_PED_CAM_VIEW_MODE() == 1 or CAM.GET_FOLLOW_PED_CAM_VIEW_MODE() == 2 then
+                CAM.SET_FOLLOW_PED_CAM_VIEW_MODE(4)
+            end
         end
     end
     if MainTab["无限动能回收加速"]:is_enabled() then
@@ -1563,6 +1653,15 @@ script.register_looped("RScript_Main", function()
     if MissionTab["跳过NPC对话"]:is_enabled() then
         if AUDIO.IS_SCRIPTED_CONVERSATION_ONGOING() then
             AUDIO.STOP_SCRIPTED_CONVERSATION(false)
+        end
+    end
+end)
+
+script.register_looped("RScript_自动收集财物", function(script_util)
+    if MissionTab["自动收集财物"]:is_enabled() then
+        if TASK.GET_IS_TASK_ACTIVE(PLAYER.PLAYER_PED_ID(), 135) then
+            PAD.SET_CONTROL_VALUE_NEXT_FRAME(0, 237, 1)
+            script_util:sleep(30)
         end
     end
 end)
