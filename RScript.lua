@@ -1,282 +1,424 @@
--------------------------------
---- Author: Rostal
--------------------------------
+--------------------------------
+-- Author: Rostal
+--------------------------------
+
+local SUPPORT_GAME_VERSION <const> = "1.69-3258"
+
+--#region check game version
+
+local build_version = memory.scan_pattern("8B C3 33 D2 C6 44 24 20"):add(0x24):rip()
+local online_version = build_version:add(0x20)
+local CURRENT_GAME_VERSION <const> = string.format("%s-%s", online_version:get_string(), build_version:get_string())
+
+if SUPPORT_GAME_VERSION ~= CURRENT_GAME_VERSION then
+    toast("未兼容当前游戏版本, 部分功能可能会失效")
+end
+
+--#endregion
+
 
 require("RScript.tables")
-
 require("RScript.functions")
 
 
-local function toast(text)
-    notify("RScript", tostring(text))
-end
-
-local function print(text)
-    log.info(tostring(text))
-end
+self = nil
+MainLoop = {} -- No Delay
 
 
---------------------------------
--- Main Tab
---------------------------------
+----------------------------------------
+-- Menu: Main
+----------------------------------------
 
---#region Main Tab
+local menu_root <const> = gui.add_tab("RScript")
 
-local tab_root <const> = gui.add_tab("RScript")
-
-local MainTab = {}
-local MainToggle = {}
+local MenuMain = { _parent = menu_root }
 
 ----------------
 -- 自我
 ----------------
 
-tab_root:add_text("<<  自我  >>")
+menu_root:add_text("<<  自我  >>")
 
-tabs.add_input_float(tab_root, "生命恢复速率", MainTab, 1.0, "[ 0.0 ~ 100.0 ]")
-tabs.add_input_float(tab_root, "生命恢复程度", MainTab, 0.5, "[ 0.0 ~ 1.0 ]")
-tabs.add_checkbox(tab_root, "自定义设置生命恢复", MainTab)
-tab_root:add_sameline()
-tab_root:add_button("恢复默认生命恢复", function()
-    MainTab["自定义设置生命恢复"]:set_enabled(false)
+menu.add_input_float(MenuMain, "生命恢复速率", 1.0, "[ 0.0 ~ 100.0 ]")
+menu.add_input_float(MenuMain, "生命恢复程度", 0.5, "[ 0.0 ~ 1.0 ]")
+menu.add_toggle_loop(MenuMain, "自定义设置生命恢复", "", function()
+    local rate = menu.get_input_value(MenuMain["生命恢复速率"], 0.0, 100.0)
+    local percent = menu.get_input_value(MenuMain["生命恢复程度"], 0.0, 1.0)
+
+    PLAYER.SET_PLAYER_HEALTH_RECHARGE_MULTIPLIER(PLAYER.PLAYER_ID(), rate)
+    PLAYER.SET_PLAYER_HEALTH_RECHARGE_MAX_PERCENT(PLAYER.PLAYER_ID(), percent)
+end, function()
     PLAYER.SET_PLAYER_HEALTH_RECHARGE_MULTIPLIER(PLAYER.PLAYER_ID(), 1.0)
     PLAYER.SET_PLAYER_HEALTH_RECHARGE_MAX_PERCENT(PLAYER.PLAYER_ID(), 0.5)
 end)
-tab_root:add_separator()
 
-tabs.add_input_float(tab_root, "自我受伤倍数", MainTab, 1.0, "[ 0.1 ~ 1.0 ] (数值越低，受到的伤害就越低)")
-tabs.add_checkbox(tab_root, "自定义设置受伤倍数", MainTab)
-tab_root:add_sameline()
-tab_root:add_button("恢复默认受伤倍数", function()
-    MainTab["自定义设置受伤倍数"]:set_enabled(false)
+menu_root:add_separator()
+
+menu.add_input_float(MenuMain, "自我受伤倍数", 1.0, "[ 0.1 ~ 1.0 ]")
+menu.add_toggle_loop(MenuMain, "自定义设置受伤倍数", "(数值越低，受到的伤害就越低)", function()
+    local value = menu.get_input_value(MenuMain["自我受伤倍数"], 0.1, 1.0)
+    PLAYER.SET_PLAYER_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
+    PLAYER.SET_PLAYER_WEAPON_MINIGUN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
+    PLAYER.SET_PLAYER_MELEE_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
+    PLAYER.SET_PLAYER_VEHICLE_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
+    PLAYER.SET_PLAYER_WEAPON_TAKEDOWN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
+end, function()
     PLAYER.SET_PLAYER_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), 1.0)
     PLAYER.SET_PLAYER_WEAPON_MINIGUN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), 1.0)
     PLAYER.SET_PLAYER_MELEE_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), 1.0)
     PLAYER.SET_PLAYER_VEHICLE_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), 1.0)
     PLAYER.SET_PLAYER_WEAPON_TAKEDOWN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), 1.0)
 end)
-tab_root:add_separator()
 
-tabs.add_checkbox(tab_root, "步行时人称视角快捷切换", MainTab, false, "第一人称视角和第三人称(近距离)视角快捷切换")
-tab_root:add_separator()
+menu_root:add_separator()
+
+menu.add_toggle_loop(MenuMain, "步行时人称视角快捷切换", "(第一人称视角 和 第三人称近距离视角 快捷切换)", function()
+    if CAM.IS_FOLLOW_PED_CAM_ACTIVE() then
+        if CAM.GET_FOLLOW_PED_CAM_VIEW_MODE() == 1 or CAM.GET_FOLLOW_PED_CAM_VIEW_MODE() == 2 then
+            CAM.SET_FOLLOW_PED_CAM_VIEW_MODE(4)
+        end
+    end
+end)
+menu_root:add_button("强制进入警星闪烁状态", function()
+    PLAYER.FORCE_START_HIDDEN_EVASION(PLAYER.PLAYER_ID())
+end)
+menu_root:add_sameline()
+menu.add_toggle_loop(MenuMain, "禁止刷出警察", "(通缉前开启，仅单人时有效)", function()
+    PLAYER.SET_DISPATCH_COPS_FOR_PLAYER(PLAYER.PLAYER_ID(), false)
+end, function()
+    PLAYER.SET_DISPATCH_COPS_FOR_PLAYER(PLAYER.PLAYER_ID(), true)
+end)
+
+menu_root:add_separator()
 
 ----------------
 -- 载具
 ----------------
 
-tab_root:add_text("<<  载具  >>")
+menu_root:add_text("<<  载具  >>")
 
-tab_root:add_button("无限载具武器弹药", function()
-    local vehicle = get_user_vehicle()
-    if vehicle ~= 0 and VEHICLE.DOES_VEHICLE_HAVE_WEAPONS(vehicle) then
-        for i = 0, 3 do
-            local ammo = VEHICLE.GET_VEHICLE_WEAPON_RESTRICTED_AMMO(vehicle, i)
-            if ammo ~= -1 then
-                VEHICLE.SET_VEHICLE_WEAPON_RESTRICTED_AMMO(vehicle, i, -1)
-            end
+menu.add_toggle_loop(MenuMain, "无限动能回收加速", "", function()
+    local vehicle = get_user_vehicle(false)
+    if vehicle ~= 0 then
+        if VEHICLE.GET_VEHICLE_HAS_KERS(vehicle) then
+            local vehicle_ptr = memory.handle_to_ptr(vehicle)
+            --local kers_boost_max = vehicle_ptr:add(0x92c):get_float()
+            vehicle_ptr:add(0x930):set_float(3.0) -- m_kers_boost
         end
     end
 end)
-tab_root:add_sameline()
-tabs.add_checkbox(tab_root, "无限动能回收加速", MainTab)
-tab_root:add_sameline()
-tabs.add_toggle_button(tab_root, "电台只播放音乐", MainToggle, false, function(toggle)
+menu_root:add_sameline()
+menu.add_toggle_button(MenuMain, "电台只播放音乐", false, function(toggle)
     for _, stationName in pairs(T.VehicleRadioStations) do
         AUDIO.SET_RADIO_STATION_MUSIC_ONLY(stationName, toggle)
     end
 end)
-tab_root:add_separator()
+menu_root:add_sameline()
+menu_root:add_button("移除当前载具通缉状态", function()
+    local vehicle = get_user_vehicle()
+    if vehicle ~= 0 then
+        clear_vehicle_wanted(vehicle)
 
-tabs.add_checkbox(tab_root, "性能升级", MainTab, true)
-tab_root:add_sameline()
-tabs.add_checkbox(tab_root, "涡轮增压", MainTab, true)
-tab_root:add_sameline()
-tabs.add_checkbox(tab_root, "属性强化", MainTab, true, "(提高防炸性等)")
-tabs.add_input_float(tab_root, "载具受伤倍数", MainTab, 0.5, "[ 0.0 ~ 1.0 ] (数值越低，受到的伤害就越低)")
+        toast("完成！")
+    end
+end)
 
-tab_root:add_button("强化当前载具", function()
-    local vehicle = get_user_vehicle(false)
+menu_root:add_separator()
+
+menu.add_toggle(MenuMain, "性能升级", true)
+menu_root:add_sameline()
+menu.add_toggle(MenuMain, "涡轮增压", true)
+menu_root:add_sameline()
+menu.add_toggle(MenuMain, "属性强化", true, "(提高防炸性等)")
+
+menu.add_input_float(MenuMain, "载具受伤倍数", 0.5, "[ 0.0 ~ 1.0 ]")
+menu_root:add_text("(数值越低，受到的伤害就越低)")
+
+menu_root:add_button("强化当前或上一辆载具", function()
+    local vehicle = get_user_vehicle()
     if vehicle == 0 then
-        notify("强化当前载具", "请先进入一辆载具")
+        notify("强化载具", "请先进入一辆载具")
+        return
     end
 
-    if MainTab["性能升级"]:is_enabled() then
+    if MenuMain["性能升级"]:is_enabled() then
         for _, mod_type in pairs({ 11, 12, 13, 16 }) do
             local mod_num = VEHICLE.GET_NUM_VEHICLE_MODS(vehicle, mod_type)
             VEHICLE.SET_VEHICLE_MOD(vehicle, mod_type, mod_num - 1, false)
         end
     end
-    if MainTab["涡轮增压"]:is_enabled() then
-        for _, mod_type in pairs({ 11, 12, 13, 16 }) do
-            VEHICLE.TOGGLE_VEHICLE_MOD(vehicle, 18, true)
-        end
+    if MenuMain["涡轮增压"]:is_enabled() then
+        VEHICLE.TOGGLE_VEHICLE_MOD(vehicle, 18, true)
     end
-    if MainTab["属性强化"]:is_enabled() then
+    if MenuMain["属性强化"]:is_enabled() then
         strong_vehicle(vehicle)
     end
-    if tabs.check_input_value(MainTab["载具受伤倍数"], 0.0, 1.0) then
-        local value = MainTab["载具受伤倍数"]:get_value()
-        VEHICLE.SET_VEHICLE_DAMAGE_SCALE(vehicle, value)
-        VEHICLE.SET_VEHICLE_WEAPON_DAMAGE_SCALE(vehicle, value)
-    end
+
+    local damage_scale = menu.get_input_value(MenuMain["载具受伤倍数"], 0.0, 1.0)
+    VEHICLE.SET_VEHICLE_DAMAGE_SCALE(vehicle, damage_scale)
+    VEHICLE.SET_VEHICLE_WEAPON_DAMAGE_SCALE(vehicle, damage_scale)
+
+    notify("强化载具", "完成！")
 end)
-tab_root:add_separator()
+menu_root:add_sameline()
+menu_root:add_button("弱化当前或上一辆载具", function()
+    local vehicle = get_user_vehicle()
+    if vehicle == 0 then
+        notify("弱化载具", "请先进入一辆载具")
+        return
+    end
+
+    for i = 0, 5 do
+        if VEHICLE.GET_IS_DOOR_VALID(vehicle, i) then
+            VEHICLE.SET_DOOR_ALLOWED_TO_BE_BROKEN_OFF(vehicle, i, true)
+        end
+    end
+    VEHICLE.SET_VEHICLE_HAS_UNBREAKABLE_LIGHTS(vehicle, false)
+    VEHICLE.SET_VEHICLE_CAN_BREAK(vehicle, true)
+
+    ENTITY.SET_ENTITY_MAX_HEALTH(vehicle, 1000)
+    SET_ENTITY_HEALTH(vehicle, 1000)
+
+    VEHICLE.SET_VEHICLE_ENGINE_HEALTH(vehicle, 1000)
+    VEHICLE.SET_VEHICLE_BODY_HEALTH(vehicle, 1000)
+    VEHICLE.SET_VEHICLE_PETROL_TANK_HEALTH(vehicle, 1000)
+    VEHICLE.SET_HELI_MAIN_ROTOR_HEALTH(vehicle, 1000)
+    VEHICLE.SET_HELI_TAIL_ROTOR_HEALTH(vehicle, 1000)
+
+    VEHICLE.SET_VEHICLE_DAMAGE_SCALE(vehicle, 1.0)
+    VEHICLE.SET_VEHICLE_WEAPON_DAMAGE_SCALE(vehicle, 1.0)
+
+    VEHICLE.SET_VEHICLE_NO_EXPLOSION_DAMAGE_FROM_DRIVER(vehicle, false)
+
+    VEHICLE.SET_VEHICLE_WHEELS_CAN_BREAK(vehicle, true)
+
+    VEHICLE.SET_VEHICLE_CAN_ENGINE_MISSFIRE(vehicle, true)
+    VEHICLE.SET_VEHICLE_CAN_LEAK_OIL(vehicle, true)
+    VEHICLE.SET_VEHICLE_CAN_LEAK_PETROL(vehicle, true)
+
+    VEHICLE.SET_DISABLE_VEHICLE_ENGINE_FIRES(vehicle, false)
+    VEHICLE.SET_DISABLE_VEHICLE_PETROL_TANK_FIRES(vehicle, false)
+    VEHICLE.SET_DISABLE_VEHICLE_PETROL_TANK_DAMAGE(vehicle, false)
+
+    VEHICLE.SET_VEHICLE_STRONG(vehicle, false)
+    VEHICLE.SET_VEHICLE_HAS_STRONG_AXLES(vehicle, false)
+
+    VEHICLE.VEHICLE_SET_RAMP_AND_RAMMING_CARS_TAKE_DAMAGE(vehicle, true)
+    VEHICLE.SET_INCREASE_WHEEL_CRUSH_DAMAGE(vehicle, true)
+    VEHICLE.SET_DISABLE_DAMAGE_WITH_PICKED_UP_ENTITY(vehicle, 0)
+    VEHICLE.SET_VEHICLE_USES_MP_PLAYER_DAMAGE_MULTIPLIER(vehicle, 0)
+    VEHICLE.SET_FORCE_VEHICLE_ENGINE_DAMAGE_BY_BULLET(vehicle, true)
+
+    VEHICLE.SET_DISABLE_EXPLODE_FROM_BODY_DAMAGE_ON_COLLISION(vehicle, 0)
+    VEHICLE.SET_VEHICLE_EXPLODES_ON_HIGH_EXPLOSION_DAMAGE(vehicle, true)
+    VEHICLE.SET_VEHICLE_EXPLODES_ON_EXPLOSION_DAMAGE_AT_ZERO_BODY_HEALTH(vehicle, true)
+
+    VEHICLE.SET_HELI_TAIL_BOOM_CAN_BREAK_OFF(vehicle, true)
+    VEHICLE.SET_DISABLE_HELI_EXPLODE_FROM_BODY_DAMAGE(vehicle, 0)
+
+    VEHICLE.SET_PLANE_RESIST_TO_EXPLOSION(vehicle, false)
+    VEHICLE.SET_HELI_RESIST_TO_EXPLOSION(vehicle, false)
+
+    notify("弱化载具", "完成！")
+end)
+
+menu_root:add_separator()
 
 ----------------
 -- 实体
 ----------------
 
-tab_root:add_text("<<  实体  >>")
+menu_root:add_text("<<  实体  >>")
 
-local entity_t = {}
-
-entity_t.npc_type_select = 1
+local entity_t = {
+    npc_type_select = 0
+}
 
 function entity_t.check_ped_type(ped)
     if PED.IS_PED_A_PLAYER(ped) then
         return false
     end
-    if entity_t.npc_type_select == 1 and not is_friendly_ped(ped) then
+    if entity_t.npc_type_select == 0 and not is_friendly_ped(ped) then
         return true
     end
-    if entity_t.npc_type_select == 2 and is_hostile_ped(ped) then
+    if entity_t.npc_type_select == 1 and is_hostile_ped(ped) then
         return true
     end
-    if entity_t.npc_type_select == 3 then
+    if entity_t.npc_type_select == 2 then
         return true
     end
     return false
 end
 
-MainTab["NPC类型"] = tab_root:add_text("NPC类型: 全部NPC (排除友好)")
-tab_root:add_sameline()
-tab_root:add_text("选择类型 ->")
-tab_root:add_sameline()
-tab_root:add_button("全部NPC (排除友好)", function()
-    MainTab["NPC类型"]:set_text("NPC类型: 全部NPC (排除友好)")
-    entity_t.npc_type = 1
-end)
-tab_root:add_sameline()
-tab_root:add_button("仅敌对NPC", function()
-    MainTab["NPC类型"]:set_text("NPC类型: 仅敌对NPC")
-    entity_t.npc_type = 2
-end)
-tab_root:add_sameline()
-tab_root:add_button("全部NPC", function()
-    MainTab["NPC类型"]:set_text("NPC类型: 全部NPC")
-    entity_t.npc_type = 3
+function entity_t.is_cop_ped(ped)
+    local hash = ENTITY.GET_ENTITY_MODEL(ped)
+    return hash == 1581098148 or hash == 2974087609 or hash == 2374966032
+end
+
+menu_root:add_imgui(function()
+    entity_t.npc_type_select, clicked = ImGui.Combo("选择NPC类型", entity_t.npc_type_select, {
+        "全部NPC (排除友好)", "仅敌对NPC", "全部NPC"
+    }, 3)
 end)
 
-tab_root:add_button("NPC 删除", function()
+menu_root:add_button("NPC 删除", function()
+    script.run_in_fiber(function()
+        for _, ped in pairs(entities.get_all_peds_as_handles()) do
+            if entity_t.check_ped_type(ped) then
+                delete_entity(ped)
+            end
+        end
+    end)
+end)
+menu_root:add_sameline()
+menu_root:add_button("NPC 死亡", function()
+    script.run_in_fiber(function()
+        for _, ped in pairs(entities.get_all_peds_as_handles()) do
+            if not ENTITY.IS_ENTITY_DEAD(ped) and entity_t.check_ped_type(ped) then
+                SET_ENTITY_HEALTH(ped, 0)
+            end
+        end
+    end)
+end)
+menu_root:add_sameline()
+menu_root:add_button("NPC 爆头击杀", function()
+    script.run_in_fiber(function()
+        local weaponHash = joaat("WEAPON_APPISTOL")
+        for _, ped in pairs(entities.get_all_peds_as_handles()) do
+            if not ENTITY.IS_ENTITY_DEAD(ped) and entity_t.check_ped_type(ped) then
+                shoot_ped_head(ped, weaponHash, PLAYER.PLAYER_PED_ID())
+            end
+        end
+    end)
+end)
+
+menu_root:add_separator()
+
+menu.add_toggle_loop(MenuMain, "警察 删除", "", function()
     for _, ped in pairs(entities.get_all_peds_as_handles()) do
-        if entity_t.check_ped_type(ped) then
+        if entity_t.is_cop_ped(ped) then
             delete_entity(ped)
         end
     end
 end)
-tab_root:add_sameline()
-tab_root:add_button("NPC 死亡", function()
+menu_root:add_sameline()
+menu.add_toggle_loop(MenuMain, "警察 死亡", "", function()
     for _, ped in pairs(entities.get_all_peds_as_handles()) do
-        if not ENTITY.IS_ENTITY_DEAD(ped) and entity_t.check_ped_type(ped) then
+        if entity_t.is_cop_ped(ped) then
             SET_ENTITY_HEALTH(ped, 0)
         end
     end
 end)
-tab_root:add_sameline()
-tab_root:add_button("NPC 爆头击杀", function()
-    local weaponHash = joaat("WEAPON_APPISTOL")
-    for _, ped in pairs(entities.get_all_peds_as_handles()) do
-        if not ENTITY.IS_ENTITY_DEAD(ped) and entity_t.check_ped_type(ped) then
-            shoot_ped_head(ped, weaponHash, PLAYER.PLAYER_PED_ID())
-        end
-    end
-end)
-tab_root:add_separator()
-
-tabs.add_checkbox(tab_root, "警察 删除", MainTab)
-tab_root:add_sameline()
-tabs.add_checkbox(tab_root, "警察 死亡", MainTab)
-tab_root:add_sameline()
-tab_root:add_button("友方NPC 无敌强化", function()
-    for _, ped in pairs(entities.get_all_peds_as_handles()) do
-        if not ENTITY.IS_ENTITY_DEAD(ped) and not PED.IS_PED_A_PLAYER(ped) then
-            if is_friendly_ped(ped) then
-                strong_ped_combat(ped, true)
-            end
-        end
-    end
-end)
-tab_root:add_sameline()
-tab_root:add_button("友方NPC 给予武器", function()
-    for _, ped in pairs(entities.get_all_peds_as_handles()) do
-        if not ENTITY.IS_ENTITY_DEAD(ped) and not PED.IS_PED_A_PLAYER(ped) then
-            if is_friendly_ped(ped) then
-                for _, weaponHash in pairs(T.CommonWeapons) do
-                    WEAPON.GIVE_WEAPON_TO_PED(ped, weaponHash, -1, false, false)
+menu_root:add_sameline()
+menu_root:add_button("友方NPC 无敌强化", function()
+    script.run_in_fiber(function()
+        for _, ped in pairs(entities.get_all_peds_as_handles()) do
+            if not ENTITY.IS_ENTITY_DEAD(ped) and not PED.IS_PED_A_PLAYER(ped) then
+                if is_friendly_ped(ped) then
+                    strong_ped_combat(ped, true)
                 end
             end
         end
-    end
+    end)
 end)
-tab_root:add_separator()
-
-tab_root:add_text("敌对实体")
-tab_root:add_button("爆炸敌对NPC", function()
-    for _, ped in pairs(entities.get_all_peds_as_handles()) do
-        if is_hostile_entity(ped) then
-            local coords = ENTITY.GET_ENTITY_COORDS(ped)
-            FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(), coords.x, coords.y, coords.z,
-                4, 100.0, false, false, 0.0)
+menu_root:add_sameline()
+menu_root:add_button("友方NPC 给予武器", function()
+    script.run_in_fiber(function()
+        for _, ped in pairs(entities.get_all_peds_as_handles()) do
+            if not ENTITY.IS_ENTITY_DEAD(ped) and not PED.IS_PED_A_PLAYER(ped) then
+                if is_friendly_ped(ped) then
+                    for _, weaponHash in pairs(T.CommonWeapons) do
+                        WEAPON.GIVE_DELAYED_WEAPON_TO_PED(ped, weaponHash, -1, false)
+                    end
+                end
+            end
         end
-    end
+    end)
 end)
-tab_root:add_sameline()
-tab_root:add_button("摧毁敌对载具", function()
-    for _, vehicle in pairs(entities.get_all_vehicles_as_handles()) do
-        if is_hostile_entity(vehicle) then
-            SET_ENTITY_HEALTH(vehicle, 0)
-            VEHICLE.SET_VEHICLE_ENGINE_HEALTH(vehicle, -4000.0)
 
-            local coords = ENTITY.GET_ENTITY_COORDS(vehicle)
-            FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(), coords.x, coords.y, coords.z,
-                4, 100.0, false, false, 0.0)
+menu_root:add_separator()
+
+menu_root:add_text("敌对实体")
+menu_root:add_button("爆炸敌对NPC", function()
+    script.run_in_fiber(function()
+        for _, ped in pairs(entities.get_all_peds_as_handles()) do
+            if is_hostile_entity(ped) then
+                local coords = ENTITY.GET_ENTITY_COORDS(ped)
+                FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(), coords.x, coords.y, coords.z,
+                    4, 100.0, false, false, 0.0)
+            end
         end
-    end
+    end)
 end)
-tab_root:add_sameline()
-tab_root:add_button("摧毁敌对物体", function()
-    for _, object in pairs(entities.get_all_objects_as_handles()) do
-        if is_hostile_entity(object) then
-            SET_ENTITY_HEALTH(object, 0)
+menu_root:add_sameline()
+menu_root:add_button("摧毁敌对载具", function()
+    script.run_in_fiber(function()
+        for _, vehicle in pairs(entities.get_all_vehicles_as_handles()) do
+            if is_hostile_entity(vehicle) then
+                SET_ENTITY_HEALTH(vehicle, 0)
+                VEHICLE.SET_VEHICLE_ENGINE_HEALTH(vehicle, -4000.0)
 
-            local coords = ENTITY.GET_ENTITY_COORDS(object)
-            FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(), coords.x, coords.y, coords.z,
-                4, 100.0, false, false, 0.0)
+                local coords = ENTITY.GET_ENTITY_COORDS(vehicle)
+                FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(), coords.x, coords.y, coords.z,
+                    4, 100.0, false, false, 0.0)
+            end
         end
-    end
+    end)
+end)
+menu_root:add_sameline()
+menu_root:add_button("摧毁敌对物体", function()
+    script.run_in_fiber(function()
+        for _, object in pairs(entities.get_all_objects_as_handles()) do
+            if is_hostile_entity(object) then
+                SET_ENTITY_HEALTH(object, 0)
+
+                local coords = ENTITY.GET_ENTITY_COORDS(object)
+                FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(), coords.x, coords.y, coords.z,
+                    4, 100.0, false, false, 0.0)
+            end
+        end
+    end)
+end)
+
+menu_root:add_separator()
+
+menu_root:add_text("拾取物")
+menu.add_toggle(MenuMain, "仅任务拾取物", true)
+menu_root:add_sameline()
+menu_root:add_button("拾取物 传送到我", function()
+    script.run_in_fiber(function()
+        for _, pickup in pairs(get_all_pickups_as_handles()) do
+            if MenuMain["仅任务拾取物"]:is_enabled() and not ENTITY.IS_ENTITY_A_MISSION_ENTITY(pickup) then
+                goto continue
+            end
+
+            OBJECT.SET_PICKUP_OBJECT_COLLECTABLE_IN_VEHICLE(pickup)
+            tp_entity_to_me(pickup)
+
+            ::continue::
+        end
+    end)
 end)
 
 
---#endregion
 
 
 
---------------------------------
--- Mission Tab
---------------------------------
+----------------------------------------
+-- Menu: Mission
+----------------------------------------
 
---#region Mission Tab
+local menu_mission <const> = menu_root:add_tab("[RS] 任务助手")
 
-local tab_mission <const> = tab_root:add_tab(" > 任务助手")
-
-local MissionTab = {}
+local MenuMission = { _parent = menu_mission }
 
 ----------------
--- 每日任务
+-- 日常任务
 ----------------
 
-tab_mission:add_text("每日任务")
-tab_mission:add_button("传送到藏匿屋", function()
+menu_mission:add_text("<<  日常任务  >>")
+
+menu_mission:add_button("传送到 藏匿屋", function()
     local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(845)
     if HUD.DOES_BLIP_EXIST(blip) then
         local coords = HUD.GET_BLIP_COORDS(blip)
@@ -285,8 +427,8 @@ tab_mission:add_button("传送到藏匿屋", function()
         notify("传送到藏匿屋", "未在地图上找到藏匿屋")
     end
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("通知藏匿屋密码", function()
+menu_mission:add_sameline()
+menu_mission:add_button("通知藏匿屋密码", function()
     if get_user_interior() == 289793 then
         local code_list = {
             [4221637939] = "01-23-45",
@@ -310,8 +452,8 @@ tab_mission:add_button("通知藏匿屋密码", function()
         end
     end
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("传送到杰拉德包裹", function()
+menu_mission:add_sameline()
+menu_mission:add_button("传送到 杰拉德包裹", function()
     local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(842)
     if HUD.DOES_BLIP_EXIST(blip) then
         local coords = HUD.GET_BLIP_COORDS(blip)
@@ -320,62 +462,115 @@ tab_mission:add_button("传送到杰拉德包裹", function()
         notify("传送到杰拉德包裹", "未在地图上找到杰拉德包裹")
     end
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("进入范围后，传送到包裹", function()
-    local entity_list = get_entities_by_hash("object", true, 138777325, 2674233009, 765087784)
+menu_mission:add_sameline()
+menu_mission:add_button("进入范围后，传送到包裹", function()
+    local entity_list = get_entities_by_hash(ENTITY_OBJECT, true, 138777325, 2674233009, 765087784)
     if next(entity_list) ~= nil then
         for _, ent in pairs(entity_list) do
             tp_to_entity(ent, 0.0, 0.0, 0.5)
         end
     end
 end)
-tab_mission:add_separator()
 
-tab_mission:add_button("打开恐霸电脑", function()
+menu_mission:add_button("传送到 电脑", function()
+    local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(521)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local coords = HUD.GET_BLIP_COORDS(blip)
+        teleport2(coords.x - 1.0, coords.y + 1.0, coords.z)
+    end
+end)
+menu_mission:add_sameline()
+menu_mission:add_button("传送到 夜总会VIP客户", function()
+    local blip = HUD.GET_NEXT_BLIP_INFO_ID(480)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local coords = HUD.GET_BLIP_COORDS(blip)
+        teleport2(coords.x, coords.y, coords.z + 0.8)
+    end
+end)
+menu_mission:add_sameline()
+menu_mission:add_button("传送到 地图蓝点", function()
+    local blip = HUD.GET_NEXT_BLIP_INFO_ID(143)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local coords = HUD.GET_BLIP_COORDS(blip)
+        teleport2(coords.x, coords.y, coords.z + 0.8)
+    end
+end)
+menu_mission:add_sameline()
+menu_mission:add_button("出口载具 传送到我", function()
+    local blip = HUD.GET_NEXT_BLIP_INFO_ID(143)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
+        if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
+            tp_vehicle_to_me(ent)
+        end
+    end
+end)
+
+menu_mission:add_button("打开恐霸电脑", function()
     start_game_script("apphackertruck")
 end)
-tab_mission:add_sameline()
-tabs.add_checkbox(tab_mission, "跳过NPC对话", MissionTab)
-tab_mission:add_sameline()
-tabs.add_checkbox(tab_mission, "自动收集财物", MissionTab, false, "模拟鼠标左键点击拿取财物")
-tab_mission:add_separator()
+menu_mission:add_sameline()
+menu.add_toggle_loop(MenuMission, "跳过NPC对话", "", function()
+    if AUDIO.IS_SCRIPTED_CONVERSATION_ONGOING() then
+        AUDIO.STOP_SCRIPTED_CONVERSATION(false)
+    end
+end)
+menu_mission:add_sameline()
+menu.add_toggle(MenuMission, "自动收集财物", false, "(模拟鼠标左键点击拿取财物，不要一直开启)")
+
+menu_mission:add_separator()
 
 ----------------
 -- 资产任务
 ----------------
 
-tab_mission:add_text("<< 资产任务 >>")
+menu_mission:add_text("<<  资产任务  >>")
 
-tab_mission:add_text("办公室拉货")
-tab_mission:add_button("传送到 特种货物", function()
+menu_mission:add_text("办公室拉货")
+menu_mission:add_button("传送到 特种货物", function()
     local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(478)
     if HUD.DOES_BLIP_EXIST(blip) then
         local coords = HUD.GET_BLIP_COORDS(blip)
         teleport2(coords.x, coords.y, coords.z + 1.0)
     end
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("特种货物 传送到我", function()
-    local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(478)
-    if HUD.DOES_BLIP_EXIST(blip) then
-        local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
-        if ENTITY.DOES_ENTITY_EXIST(ent) then
-            set_entity_heading_to_entity(ent, PLAYER.PLAYER_PED_ID())
-            tp_entity_to_me(ent)
-
-            if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
-                tp_into_vehicle(ent, "delete", "delete")
+menu_mission:add_sameline()
+menu_mission:add_button("特种货物 传送到我", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_pickups("gb_contraband_buy")
+        if next(entity_list) ~= nil then
+            OBJECT.SET_MAX_NUM_PORTABLE_PICKUPS_CARRIED_BY_PLAYER(ENTITY.GET_ENTITY_MODEL(entity_list[1]), 3)
+            for _, ent in pairs(entity_list) do
+                tp_pickup_to_me(ent)
             end
-        else
-            notify("", "目标不是实体，无法传送到我")
+            return
         end
-    end
+
+        local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(478)
+        if HUD.DOES_BLIP_EXIST(blip) then
+            local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
+            if ENTITY.DOES_ENTITY_EXIST(ent) then
+                set_entity_heading_to_entity(ent, PLAYER.PLAYER_PED_ID())
+                tp_entity_to_me(ent)
+
+                if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
+                    tp_into_vehicle(ent, "delete", "delete")
+                end
+            else
+                toast("目标不是实体，无法传送到我")
+            end
+        end
+    end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("特种货物(载具) 传送到我", function()
-    local entity_list = get_entities_by_hash("object", true, 2972783418, 2272050386)
-    if next(entity_list) ~= nil then
-        for k, ent in pairs(entity_list) do
+menu_mission:add_sameline()
+menu_mission:add_button("特种货物(载具) 传送到我", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_OBJECT, "gb_contraband_buy", 2972783418, 2272050386)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if ENTITY.IS_ENTITY_ATTACHED(ent) then
                 local attached_ent = ENTITY.GET_ENTITY_ATTACHED_TO(ent)
                 if ENTITY.IS_ENTITY_A_VEHICLE(attached_ent) then
@@ -383,12 +578,11 @@ tab_mission:add_button("特种货物(载具) 传送到我", function()
                 end
             end
         end
-    end
+    end)
 end)
-tab_mission:add_separator()
 
-tab_mission:add_text("地堡拉货")
-tab_mission:add_button("传送到 地堡原材料", function()
+menu_mission:add_text("地堡拉货")
+menu_mission:add_button("传送到 地堡原材料", function()
     local blip1 = HUD.GET_CLOSEST_BLIP_INFO_ID(556)
     local blip2 = HUD.GET_CLOSEST_BLIP_INFO_ID(561)
     local blip3 = HUD.GET_CLOSEST_BLIP_INFO_ID(477)
@@ -404,10 +598,20 @@ tab_mission:add_button("传送到 地堡原材料", function()
         teleport2(coords.x, coords.y, coords.z + 1.0)
     end
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("地堡原材料 传送到我", function()
-    local blip = HUD.GET_NEXT_BLIP_INFO_ID(556)
-    if HUD.DOES_BLIP_EXIST(blip) then
+menu_mission:add_sameline()
+menu_mission:add_button("地堡原材料 传送到我", function()
+    script.run_in_fiber(function()
+        local blip = HUD.GET_NEXT_BLIP_INFO_ID(556)
+        if not HUD.DOES_BLIP_EXIST(blip) then
+            local entity_list = get_mission_pickups("gb_gunrunning")
+            if next(entity_list) ~= nil then
+                for _, ent in pairs(entity_list) do
+                    tp_entity_to_me(ent)
+                end
+            end
+            return
+        end
+
         local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
         if ENTITY.DOES_ENTITY_EXIST(ent) then
             set_entity_heading_to_entity(ent, PLAYER.PLAYER_PED_ID())
@@ -417,14 +621,35 @@ tab_mission:add_button("地堡原材料 传送到我", function()
                 tp_into_vehicle(ent, "delete", "delete")
             end
         else
-            notify("", "目标不是实体，无法传送到我")
+            toast("目标不是实体，无法传送到我")
         end
+    end)
+end)
+
+menu_mission:add_text("机库空运货物")
+menu_mission:add_button("传送到 机库空运货物", function()
+    local blip = HUD.GET_NEXT_BLIP_INFO_ID(568)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local coords = HUD.GET_BLIP_COORDS(blip)
+        teleport2(coords.x, coords.y, coords.z + 1.0)
     end
 end)
-tab_mission:add_separator()
+menu_mission:add_sameline()
+menu_mission:add_button("机库空运货物 传送到我", function()
+    script.run_in_fiber(function()
+        for _, ent in pairs(get_all_pickups_as_handles()) do
+            if ENTITY.IS_ENTITY_A_MISSION_ENTITY(ent) then
+                local entity_script = GET_ENTITY_SCRIPT(ent)
+                if entity_script == "gb_smuggler" or entity_script == "fm_content_smuggler_resupply" then
+                    tp_pickup_to_me(ent)
+                end
+            end
+        end
+    end)
+end)
 
-tab_mission:add_text("摩托帮工厂")
-tab_mission:add_button("传送到 工厂原材料", function()
+menu_mission:add_text("摩托帮工厂")
+menu_mission:add_button("传送到 工厂原材料", function()
     local blip1 = HUD.GET_CLOSEST_BLIP_INFO_ID(501)
     local blip2 = HUD.GET_CLOSEST_BLIP_INFO_ID(64)
     local blip3 = HUD.GET_CLOSEST_BLIP_INFO_ID(427)
@@ -444,121 +669,190 @@ tab_mission:add_button("传送到 工厂原材料", function()
         teleport2(coords.x, coords.y + 1.5, coords.z - 1.0)
     end
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("工厂原材料 传送到我", function()
-    local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(501)
-    if HUD.DOES_BLIP_EXIST(blip) then
-        local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
-        if ENTITY.DOES_ENTITY_EXIST(ent) then
-            set_entity_heading_to_entity(ent, PLAYER.PLAYER_PED_ID())
-            tp_entity_to_me(ent)
+menu_mission:add_sameline()
+menu_mission:add_button("工厂原材料 传送到我", function()
+    script.run_in_fiber(function()
+        local blip = HUD.GET_CLOSEST_BLIP_INFO_ID(501)
+        if HUD.DOES_BLIP_EXIST(blip) then
+            local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
+            if ENTITY.DOES_ENTITY_EXIST(ent) then
+                set_entity_heading_to_entity(ent, PLAYER.PLAYER_PED_ID())
+                tp_entity_to_me(ent)
 
-            if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
-                tp_into_vehicle(ent, "delete", "delete")
+                if ENTITY.IS_ENTITY_A_VEHICLE(ent) then
+                    tp_into_vehicle(ent, "delete", "delete")
+                end
+            else
+                toast("目标不是实体，无法传送到我")
             end
-        else
-            notify("", "目标不是实体，无法传送到我")
         end
-    end
+    end)
 end)
-tab_mission:add_separator()
+
+menu_mission:add_separator()
+
+----------------
+-- 佩里科岛抢劫
+----------------
+
+menu_mission:add_text("<<  佩里科岛抢劫  >>")
+menu_mission:add_button("摧毁主要目标玻璃柜、保险箱 (会在豪宅外生成主要目标包裹)", function()
+    script.run_in_fiber(function()
+        local entity_list = get_entities_by_hash(ENTITY_OBJECT, false, 2580434079, 1098122770)
+        if next(entity_list) ~= nil then
+            for _, ent in pairs(entity_list) do
+                if request_control2(ent) then
+                    SET_ENTITY_HEALTH(ent, 0)
+                end
+            end
+        end
+    end)
+end)
+menu_mission:add_sameline()
+menu_mission:add_button("主要目标掉落包裹 传送到我", function()
+    script.run_in_fiber(function()
+        local blip = HUD.GET_NEXT_BLIP_INFO_ID(765)
+        if HUD.DOES_BLIP_EXIST(blip) then
+            local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
+            if ENTITY.DOES_ENTITY_EXIST(ent) then
+                if request_control2(ent) then
+                    tp_entity_to_me(ent)
+                end
+            end
+        end
+    end)
+end)
+
+menu_mission:add_separator()
 
 ----------------
 -- 公寓抢劫
 ----------------
 
-tab_mission:add_text("<< 公寓抢劫 >>")
+menu_mission:add_text("<<  公寓抢劫  >>")
 
-tab_mission:add_text("越狱")
-tab_mission:add_button("梅杜莎飞机 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 1077420264 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_text("越狱")
+menu_mission:add_button("梅杜莎飞机 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 1077420264)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("秃鹰直升机 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 788747387 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("秃鹰直升机 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 788747387)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("敌对天煞 冻结", function()
-    get_mission_entities_by_hash("vehicle", { 3013282534 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("敌对天煞 冻结", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 3013282534)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 ENTITY.FREEZE_ENTITY_POSITION(ent, true)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("光头 无敌强化", function()
-    get_mission_entities_by_hash("ped", { 940330470 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("光头 无敌强化", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_PED, "fm_mission_controller", 940330470)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 strong_ped_combat(ent, true)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("光头 传送进美杜莎", function()
-    local vehicle = 0
-    get_mission_entities_by_hash("vehicle", { 1077420264 }, function(ent)
-        if is_mission_script_entity(ent) then
-            vehicle = ent
+menu_mission:add_sameline()
+menu_mission:add_button("光头 传送进美杜莎", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 1077420264)
+        if next(entity_list) == nil then
+            return
         end
-    end)
+        local velum2 = entity_list[1]
 
-    if vehicle == 0 then return end
+        entity_list = get_mission_entities_by_hash(ENTITY_PED, "fm_mission_controller", 940330470)
+        if next(entity_list) == nil then
+            return
+        end
 
-    get_mission_entities_by_hash("ped", { 940330470 }, function(ent)
-        if is_mission_script_entity(ent) then
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
-                PED.SET_PED_INTO_VEHICLE(ent, vehicle, 0)
+                PED.SET_PED_INTO_VEHICLE(ent, velum2, 0)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
 
-tab_mission:add_text("突袭人道实验室")
-tab_mission:add_button("九头蛇 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 970385471 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_text("突袭人道实验室")
+menu_mission:add_button("九头蛇 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 970385471)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("天煞(没有人驾驶的) 无敌", function()
-    local i = 0
-    get_mission_entities_by_hash("vehicle", { 3013282534 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("天煞(没有人驾驶的) 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 30132825342)
+        if next(entity_list) == nil then
+            return
+        end
+
+        local i = 0
+        for _, ent in pairs(entity_list) do
             if VEHICLE.IS_VEHICLE_SEAT_FREE(ent, -1, true) then
                 request_control(ent)
                 set_entity_godmode(ent, true)
@@ -569,56 +863,99 @@ tab_mission:add_button("天煞(没有人驾驶的) 无敌", function()
                 end
             end
         end
+        toast("完成！\n数量: " .. i)
     end)
-    notify("", "完成！\n数量: " .. i)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("女武神直升机 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 2694714877 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("女武神直升机 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 2694714877)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
 
-tab_mission:add_text("首轮募资")
-tab_mission:add_button("穿梭者直升机 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 744705981 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_text("首轮募资")
+menu_mission:add_button("穿梭者直升机 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 744705981)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("油罐车 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 1956216962 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("油罐车 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 1956216962)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
 
-tab_mission:add_text("太平洋标准银行")
-tab_mission:add_button("厢型车司机 传送到天上", function()
-    local i = 0
-    get_mission_entities_by_hash("vehicle", { 444171386 }, function(ent)
-        if is_mission_script_entity(ent) then
-            local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)
+menu_mission:add_text("太平洋标准银行")
+menu_mission:add_button("厢型车 添加地图标记点", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 444171386)
+        if next(entity_list) == nil then
+            return
+        end
+
+        local blip_sprite = 535 -- radar_target_a
+        for _, ent in pairs(entity_list) do
+            local blip = HUD.GET_BLIP_FROM_ENTITY(ent)
+            if not HUD.DOES_BLIP_EXIST(blip) then
+                blip = HUD.ADD_BLIP_FOR_ENTITY(ent)
+                HUD.SET_BLIP_SPRITE(blip, blip_sprite)
+                HUD.SET_BLIP_COLOUR(blip, 5) -- Yellow
+                HUD.SET_BLIP_SCALE(blip, 0.8)
+            end
+
+            blip_sprite = blip_sprite + 1
+        end
+        toast("完成！")
+    end)
+end)
+menu_mission:add_sameline()
+menu_mission:add_button("厢型车司机 传送到天上", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 444171386)
+        if next(entity_list) == nil then
+            return
+        end
+
+        local i = 0
+        for _, ent in pairs(entity_list) do
+            local ped = GET_PED_IN_VEHICLE_SEAT(ent, -1)
             if ped ~= 0 and not PED.IS_PED_A_PLAYER(ped) then
                 request_control(ped)
 
@@ -631,85 +968,297 @@ tab_mission:add_button("厢型车司机 传送到天上", function()
                 end
             end
         end
+        toast("完成！\n数量: " .. i)
     end)
-    notify("", "完成！\n数量: " .. i)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("车队卡车 无敌", function()
-    get_mission_entities_by_hash("vehicle", { 630371791 }, function(ent)
-        if is_mission_script_entity(ent) then
+menu_mission:add_sameline()
+menu_mission:add_button("车队卡车 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 630371791)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
             if request_control2(ent) then
                 set_entity_godmode(ent, true)
                 strong_vehicle(ent)
 
-                notify("", "完成！")
+                toast("完成！")
             end
         end
     end)
 end)
-tab_mission:add_sameline()
-tab_mission:add_button("雷克卓摩托车 升级无敌", function()
-    local i = 0
-    get_mission_entities_by_hash("vehicle", { 640818791 }, function(ent)
-        if is_mission_script_entity(ent) then
-            if VEHICLE.IS_VEHICLE_SEAT_FREE(ent, -1, true) then
-                request_control(ent, 1)
+menu_mission:add_sameline()
+menu_mission:add_button("雷克卓摩托车 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 640818791)
+        if next(entity_list) == nil then
+            return
+        end
+
+        local i = 0
+        for _, ent in pairs(entity_list) do
+            request_control(ent, 500)
+
+            set_entity_godmode(ent, true)
+            upgrade_vehicle(ent)
+            strong_vehicle(ent)
+
+            if has_control_entity(ent) then
+                i = i + 1
+            end
+        end
+        toast("完成！\n数量: " .. i)
+    end)
+end)
+
+menu_mission:add_separator()
+
+----------------
+-- 末日豪劫
+----------------
+
+menu_mission:add_text("<<  末日豪劫  >>")
+
+menu_mission:add_button("14号探员 无敌强化", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_PED, "fm_mission_controller", 4227433577)
+        if next(entity_list) == nil then
+            return
+        end
+
+        local weaponHash = util.joaat("WEAPON_SPECIALCARBINE")
+
+        for _, ent in pairs(entity_list) do
+            if request_control2(ent) then
+                WEAPON.GIVE_DELAYED_WEAPON_TO_PED(ped, weaponHash, -1, true)
+                strong_ped_combat(ent, true)
+
+                toast("完成！")
+            end
+        end
+    end)
+end)
+menu_mission:add_sameline()
+menu_mission:add_button("护送ULP直升机 无敌", function()
+    script.run_in_fiber(function()
+        local entity_list = get_mission_entities_by_hash(ENTITY_VEHICLE, "fm_mission_controller", 2310691317)
+        if next(entity_list) == nil then
+            return
+        end
+
+        for _, ent in pairs(entity_list) do
+            if request_control2(ent) then
                 set_entity_godmode(ent, true)
-                upgrade_vehicle(ent)
                 strong_vehicle(ent)
 
-                if has_control_entity(ent) then
-                    i = i + 1
+                toast("完成！")
+            end
+        end
+    end)
+end)
+
+menu_mission:add_separator()
+
+----------------
+-- 管理任务载具
+----------------
+
+local heist_mission_vehicle = {
+    initialized = false,
+    can_show = false,
+    vehicle_list = {},
+    need_update_vehicle_list = false
+}
+
+function heist_mission_vehicle.get_vehicle_list()
+    local script_name = get_running_mission_controller_script()
+    if script_name == nil then
+        return {}
+    end
+
+    local vehicle_list = {}
+    for _, vehicle in pairs(entities.get_all_vehicles_as_handles()) do
+        if ENTITY.IS_ENTITY_A_MISSION_ENTITY(vehicle) then
+            if GET_ENTITY_SCRIPT(vehicle) == script_name then
+                table.insert(vehicle_list, vehicle)
+            end
+        end
+    end
+    return vehicle_list
+end
+
+function heist_mission_vehicle.get_driver_name(vehicle)
+    local driver = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1, false)
+
+    if PED.IS_PED_A_PLAYER(driver) then
+        local player_id = get_player_from_ped(driver)
+        return PLAYER.GET_PLAYER_NAME(player_id)
+    end
+
+    local driver_hash = ENTITY.GET_ENTITY_MODEL(driver)
+    local driver_model = reverse_ped_hash(driver_hash)
+    if driver_model == "" then
+        return driver_hash
+    end
+    return driver_model
+end
+
+menu_mission:add_button("快捷管理任务载具", function()
+    heist_mission_vehicle.can_show = not heist_mission_vehicle.can_show
+end)
+menu_mission:add_imgui(function()
+    if heist_mission_vehicle.can_show and ImGui.Begin("快捷管理任务载具") then
+        if not heist_mission_vehicle.initialized then
+            ImGui.SetWindowSize(450, 800)
+            heist_mission_vehicle.initialized = true
+        end
+
+        if ImGui.Button("刷新列表", 200, 50) then
+            heist_mission_vehicle.need_update_vehicle_list = true
+        end
+
+        if heist_mission_vehicle.need_update_vehicle_list then
+            heist_mission_vehicle.vehicle_list = heist_mission_vehicle.get_vehicle_list()
+
+            heist_mission_vehicle.need_update_vehicle_list = false
+        end
+
+        if next(heist_mission_vehicle.vehicle_list) == nil then
+            return
+        end
+
+        for _, vehicle in pairs(heist_mission_vehicle.vehicle_list) do
+            if not ENTITY.DOES_ENTITY_EXIST(vehicle) then
+                return
+            end
+
+            local title = get_vehicle_display_name(vehicle)
+            local text = ""
+
+            if not VEHICLE.IS_VEHICLE_SEAT_FREE(vehicle, -1, false) then
+                text = text .. "司机: " .. heist_mission_vehicle.get_driver_name(vehicle) .. "\n"
+            end
+
+            local blip = HUD.GET_BLIP_FROM_ENTITY(vehicle)
+            if HUD.DOES_BLIP_EXIST(blip) then
+                local blip_sprite = HUD.GET_BLIP_SPRITE(blip)
+                if blip_sprite == 1 then
+                    title = title .. " [目标点]"
+                else
+                    title = title .. " [标记点]"
+                end
+
+                local blip_colour = HUD.GET_BLIP_COLOUR(blip)
+                if blip_colour == 54 then
+                    text = text .. "BLIP_COLOUR_BLUEDARK" .. "\n"
                 end
             end
-        end
-    end)
-    notify("", "完成！\n数量: " .. i)
-end)
-tab_mission:add_separator()
 
-----------------
--- 佩里科岛抢劫
-----------------
+            if vehicle == PED.GET_VEHICLE_PED_IS_IN(PLAYER.PLAYER_PED_ID(), false) then
+                if PED.IS_PED_IN_ANY_VEHICLE(PLAYER.PLAYER_PED_ID(), false) then
+                    title = title .. " [当前载具]"
+                else
+                    title = title .. " [上一辆载具]"
+                end
+            end
 
-tab_mission:add_text("<< 佩里科岛抢劫 >>")
-tab_mission:add_button("摧毁主要目标玻璃柜、保险箱 (会在豪宅外生成主要目标包裹)", function()
-    get_mission_entities_by_hash("object", { 2580434079, 1098122770 }, function(ent)
-        if request_control2(ent) then
-            SET_ENTITY_HEALTH(ent, 0)
+            local owner = get_entity_owner(vehicle)
+            text = text .. "控制权: " .. PLAYER.GET_PLAYER_NAME(owner)
 
-            notify("", "完成！")
-        end
-    end)
-end)
-tab_mission:add_sameline()
-tab_mission:add_button("主要目标掉落包裹 传送到我", function()
-    local blip = HUD.GET_NEXT_BLIP_INFO_ID(765)
-    if HUD.DOES_BLIP_EXIST(blip) then
-        local ent = HUD.GET_BLIP_INFO_ID_ENTITY_INDEX(blip)
-        if ENTITY.DOES_ENTITY_EXIST(ent) then
-            if request_control2(ent) then
-                tp_entity_to_me(ent)
+
+            ImGui.Spacing()
+            if ImGui.TreeNode(title) then
+                ImGui.Spacing()
+
+                ImGui.Text(text)
+
+                ImGui.Spacing()
+
+                if ImGui.Button("请求控制", 150, 40) then
+                    if request_control(vehicle) then
+                        toast("请求控制实体成功！")
+                    else
+                        toast("请求控制实体失败，请重试")
+                    end
+                end
+
+                if ImGui.Button("无敌") then
+                    set_entity_godmode(vehicle, true)
+                end
+                ImGui.SameLine()
+                if ImGui.Button("强化") then
+                    strong_vehicle(vehicle)
+                end
+                ImGui.SameLine()
+                if ImGui.Button("升级") then
+                    upgrade_vehicle(vehicle)
+                end
+
+                if ImGui.Button("传送到 我 并进入驾驶位") then
+                    local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)
+                    if ENTITY.IS_ENTITY_A_PED(ped) then
+                        set_entity_move(ped, 0.0, 0.0, 3.0)
+                    end
+                    ENTITY_HEADING(vehicle, user_heading())
+                    tp_entity_to_me(vehicle)
+                    PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -1)
+                end
+
+                if ImGui.Button("传送到 驾驶位") then
+                    local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1)
+                    if ENTITY.IS_ENTITY_A_PED(ped) then
+                        set_entity_move(ped, 0.0, 0.0, 3.0)
+                    end
+                    PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -1)
+                end
+                ImGui.SameLine()
+                if ImGui.Button("传送到 副驾驶位") then
+                    if VEHICLE.GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS(vehicle) > 0 then
+                        local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, 0)
+                        if ENTITY.IS_ENTITY_A_PED(ped) then
+                            set_entity_move(ped, 0.0, 0.0, 3.0)
+                        end
+                        PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, 0)
+                    else
+                        toast("载具无副驾驶位")
+                    end
+                end
+                ImGui.SameLine()
+                if ImGui.Button("传送到 空座位") then
+                    if VEHICLE.ARE_ANY_VEHICLE_SEATS_FREE(vehicle) then
+                        PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -2)
+                    else
+                        toast("载具已无空座位")
+                    end
+                end
+
+
+                ImGui.Spacing()
+                ImGui.Separator()
+                ImGui.TreePop()
             end
         end
+
+        ImGui.End()
     end
 end)
 
 
---#endregion
 
 
 
---------------------------------
--- Manage Entity Tab
---------------------------------
+----------------------------------------
+-- Menu: Manage Entity
+----------------------------------------
 
---#region Manage Entity Tab
+local menu_manage_entity <const> = menu_root:add_tab("[RS] 管理实体")
 
-local tab_manage_entity <const> = tab_root:add_tab(" > 管理实体")
+local menu_vehicle_list <const> = menu_manage_entity:add_tab(" >> 载具列表")
+local menu_ped_list <const> = menu_manage_entity:add_tab(" >> NPC列表")
 
-local tab_vehicle_list <const> = tab_manage_entity:add_tab(" >> 载具列表")
-local tab_ped_list <const> = tab_manage_entity:add_tab(" >> NPC列表")
+local MenuManageEntity = { _parent = menu_manage_entity }
 
 local ManageEntityTab = {}
 
@@ -733,9 +1282,10 @@ local manage_entity = {
 function manage_entity.gui.info(tab, entity_type)
     local gui_table = manage_entity[entity_type].guis
 
-    tab:add_text("在下方点击选择一个实体，然后进行实体控制")
-    ----------
+    tab:add_text("在下方点击选择一个实体，然后进行实体控制；对于网络实体需要先请求控制")
     tab:add_separator()
+    ----------
+
     gui_table["ent_name"] = tab:add_text("当前选择实体: 无")
     tab:add_sameline()
     gui_table["ent_exist"] = tab:add_text("")
@@ -803,14 +1353,16 @@ function manage_entity.gui.entity(tab, entity_type)
     end)
 
     tab:add_button("请求控制", function()
-        local ent = manage_entity[entity_type].ent
-        if ENTITY.DOES_ENTITY_EXIST(ent) then
-            if request_control(ent) then
-                notify("请求控制实体", "成功")
-            else
-                notify("请求控制实体", "失败，请重试")
+        script.run_in_fiber(function()
+            local ent = manage_entity[entity_type].ent
+            if ENTITY.DOES_ENTITY_EXIST(ent) then
+                if request_control(ent) then
+                    notify("请求控制实体", "成功")
+                else
+                    notify("请求控制实体", "失败，请重试")
+                end
             end
-        end
+        end)
     end)
     tab:add_sameline()
     tab:add_button("设置为任务实体", function()
@@ -824,7 +1376,7 @@ function manage_entity.gui.entity(tab, entity_type)
     tab:add_sameline()
     tab:add_button("设置为网络实体", function()
         local ent = manage_entity[entity_type].ent
-        if ENTITY.DOES_ENTITY_EXIST(ent) and NETWORK.NETWORK_IS_SESSION_STARTED() then
+        if ENTITY.DOES_ENTITY_EXIST(ent) and is_in_session() then
             NETWORK.NETWORK_REGISTER_ENTITY_AS_NETWORKED(ent)
             local net_id = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(ent)
             NETWORK.SET_NETWORK_ID_EXISTS_ON_ALL_MACHINES(net_id, true)
@@ -835,13 +1387,15 @@ function manage_entity.gui.entity(tab, entity_type)
     end)
     tab:add_sameline()
     tab:add_button("删除", function()
-        local ent = manage_entity[entity_type].ent
-        if ENTITY.DOES_ENTITY_EXIST(ent) then
-            if PED.IS_PED_IN_VEHICLE(PLAYER.PLAYER_PED_ID(), ent, true) then
-                TP_ENTITY(PLAYER.PLAYER_PED_ID(), ENTITY.GET_ENTITY_COORDS(ent))
+        script.run_in_fiber(function()
+            local ent = manage_entity[entity_type].ent
+            if ENTITY.DOES_ENTITY_EXIST(ent) then
+                if PED.IS_PED_IN_VEHICLE(PLAYER.PLAYER_PED_ID(), ent, true) then
+                    TP_ENTITY(PLAYER.PLAYER_PED_ID(), ENTITY.GET_ENTITY_COORDS(ent))
+                end
+                delete_entity(ent)
             end
-            delete_entity(ent)
-        end
+        end)
     end)
 
     ----------
@@ -1230,9 +1784,9 @@ function manage_entity.gui.update_info(entity_type)
         end
     end
 
-    local entity_script = ENTITY.GET_ENTITY_SCRIPT(ent, 0)
-    if entity_script ~= nil then
-        gui_table["script"]:set_text("脚本: " .. string.lower(entity_script))
+    local entity_script = GET_ENTITY_SCRIPT(ent)
+    if entity_script ~= "" then
+        gui_table["script"]:set_text("脚本: " .. entity_script)
     else
         gui_table["script"]:set_text("脚本: 无")
     end
@@ -1253,13 +1807,13 @@ function manage_entity.get_entity_info(ent, index)
 
     info = info .. ", 速度: " .. string.format("%.2f", ENTITY.GET_ENTITY_SPEED(ent))
 
-    if NETWORK.NETWORK_IS_SESSION_STARTED() then
+    if is_in_session() then
         info = info .. ", 控制权: " .. PLAYER.GET_PLAYER_NAME(get_entity_owner(ent))
     end
 
-    local entity_script = ENTITY.GET_ENTITY_SCRIPT(ent, 0)
-    if entity_script ~= nil then
-        info = info .. ", 脚本: " .. string.lower(entity_script)
+    local entity_script = GET_ENTITY_SCRIPT(ent)
+    if entity_script ~= "" then
+        info = info .. ", 脚本: " .. entity_script
     end
 
     local blip = HUD.GET_BLIP_FROM_ENTITY(ent)
@@ -1414,9 +1968,11 @@ function manage_entity.check_match(ent)
 end
 
 function manage_entity.get_entity_list(entity_type)
-    local target_tab = tab_vehicle_list
+    local target_tab = menu_vehicle_list
+    local entityType = ENTITY_VEHICLE
     if entity_type == "ped" then
-        target_tab = tab_ped_list
+        target_tab = menu_ped_list
+        entityType = ENTITY_PED
     end
     target_tab:clear()
     manage_entity[entity_type].ent = 0
@@ -1424,7 +1980,7 @@ function manage_entity.get_entity_list(entity_type)
     manage_entity.gui.entity(target_tab, entity_type)
 
     local num = 0
-    for key, ent in pairs(get_all_entities(entity_type)) do
+    for key, ent in pairs(get_all_entities(entityType)) do
         if manage_entity.check_match(ent) then
             num = num + 1
 
@@ -1453,142 +2009,58 @@ function manage_entity.get_entity_list(entity_type)
     end
 end
 
-tab_manage_entity:add_button("获取载具列表", function()
+menu_manage_entity:add_button("获取载具列表", function()
     manage_entity.get_entity_list("vehicle")
 end)
-tab_manage_entity:add_sameline()
-tab_manage_entity:add_button("获取NPC列表", function()
+menu_manage_entity:add_sameline()
+menu_manage_entity:add_button("获取NPC列表", function()
     manage_entity.get_entity_list("ped")
 end)
-tab_manage_entity:add_sameline()
-tab_manage_entity:add_button("清空载具列表", function()
+menu_manage_entity:add_sameline()
+menu_manage_entity:add_button("清空载具列表", function()
     manage_entity["vehicle"].enable = false
-    tab_vehicle_list:clear()
+    menu_vehicle_list:clear()
 end)
-tab_manage_entity:add_sameline()
-tab_manage_entity:add_button("清空NPC列表", function()
+menu_manage_entity:add_sameline()
+menu_manage_entity:add_button("清空NPC列表", function()
     manage_entity["ped"].enable = false
-    tab_ped_list:clear()
+    menu_ped_list:clear()
 end)
-tab_manage_entity:add_separator()
+menu_manage_entity:add_separator()
 
-tab_manage_entity:add_text("筛选设置")
-tabs.add_checkbox(tab_manage_entity, "任务实体", ManageEntityTab, true, "(是/否)")
-tab_manage_entity:add_sameline()
-tabs.add_checkbox(tab_manage_entity, "禁用筛选: 任务实体", ManageEntityTab)
+menu_manage_entity:add_text("筛选设置")
+tabs.add_checkbox(menu_manage_entity, "任务实体", ManageEntityTab, true, "(是/否)")
+menu_manage_entity:add_sameline()
+tabs.add_checkbox(menu_manage_entity, "禁用筛选: 任务实体", ManageEntityTab)
 
-tabs.add_input_float(tab_manage_entity, "距离", ManageEntityTab, 0, "(0表示不限制)")
+tabs.add_input_float(menu_manage_entity, "距离", ManageEntityTab, 0, "(0表示不限制)")
 
-tabs.add_checkbox(tab_manage_entity, "地图标记点", ManageEntityTab, false, "(有/没有)")
-tab_manage_entity:add_sameline()
-tabs.add_checkbox(tab_manage_entity, "禁用筛选: 地图标记点", ManageEntityTab, true)
+tabs.add_checkbox(menu_manage_entity, "地图标记点", ManageEntityTab, false, "(有/没有)")
+menu_manage_entity:add_sameline()
+tabs.add_checkbox(menu_manage_entity, "禁用筛选: 地图标记点", ManageEntityTab, true)
 
-tabs.add_checkbox(tab_manage_entity, "正在移动", ManageEntityTab, false, "(是/否)")
-tab_manage_entity:add_sameline()
-tabs.add_checkbox(tab_manage_entity, "禁用筛选: 正在移动", ManageEntityTab, true)
+tabs.add_checkbox(menu_manage_entity, "正在移动", ManageEntityTab, false, "(是/否)")
+menu_manage_entity:add_sameline()
+tabs.add_checkbox(menu_manage_entity, "禁用筛选: 正在移动", ManageEntityTab, true)
 
-tab_manage_entity:add_text("NPC")
-tabs.add_checkbox(tab_manage_entity, "与玩家关系", ManageEntityTab, false, "(敌对/友好)")
-tab_manage_entity:add_sameline()
-tabs.add_checkbox(tab_manage_entity, "禁用筛选: 与玩家关系", ManageEntityTab, true)
+menu_manage_entity:add_text("NPC")
+tabs.add_checkbox(menu_manage_entity, "与玩家关系", ManageEntityTab, false, "(敌对/友好)")
+menu_manage_entity:add_sameline()
+tabs.add_checkbox(menu_manage_entity, "禁用筛选: 与玩家关系", ManageEntityTab, true)
 
-tabs.add_checkbox(tab_manage_entity, "在载具内", ManageEntityTab, false, "(是/否)")
-tab_manage_entity:add_sameline()
-tabs.add_checkbox(tab_manage_entity, "禁用筛选: 在载具内", ManageEntityTab, true)
+tabs.add_checkbox(menu_manage_entity, "在载具内", ManageEntityTab, false, "(是/否)")
+menu_manage_entity:add_sameline()
+tabs.add_checkbox(menu_manage_entity, "禁用筛选: 在载具内", ManageEntityTab, true)
 
-tab_manage_entity:add_text("载具")
-tabs.add_checkbox(tab_manage_entity, "载具司机", ManageEntityTab, false, "(有/没有)")
-tab_manage_entity:add_sameline()
-tabs.add_checkbox(tab_manage_entity, "禁用筛选: 载具司机", ManageEntityTab, true)
-
-
---#endregion
+menu_manage_entity:add_text("载具")
+tabs.add_checkbox(menu_manage_entity, "载具司机", ManageEntityTab, false, "(有/没有)")
+menu_manage_entity:add_sameline()
+tabs.add_checkbox(menu_manage_entity, "禁用筛选: 载具司机", ManageEntityTab, true)
 
 
 
---------------------------------
--- Debug Tab
---------------------------------
-
-local tab_debug <const> = tab_root:add_tab(" > Debug")
-
-local DebugTab = {}
-
-tabs.add_checkbox(tab_debug, "RPG爆炸准星位置", DebugTab, false, "E键使用")
-tab_debug:add_sameline()
-tabs.add_checkbox(tab_debug, "署名爆炸", DebugTab)
-
-tabs.add_checkbox(tab_debug, "RPG射击准星位置", DebugTab, false, "E键使用")
-tab_debug:add_sameline()
-tabs.add_checkbox(tab_debug, "署名射击", DebugTab)
 
 
-
-script.register_looped("RScript_Debug", function(script_util)
-    if DebugTab["RPG爆炸准星位置"]:is_enabled() then
-        draw_crosshair()
-
-        local result = get_raycast_result(1500.0)
-        if result.hit then
-            -- local line_colour = { r = 255, g = 0, b = 255, a = 255 }
-            -- local coords = result.endCoords
-            -- local my_coords = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
-
-            -- local ent = result.entityHit
-            -- if ENTITY.DOES_ENTITY_EXIST(ent) and ENTITY.GET_ENTITY_TYPE(ent) > 0 then
-            --     line_colour = { r = 0, g = 255, b = 0, a = 255 }
-            -- end
-
-            -- DRAW_LINE(my_coords, coords, line_colour)
-
-
-            if PAD.IS_CONTROL_PRESSED(0, 51) then
-                local coords = result.endCoords
-
-                local explosion_type = 4 -- EXP_TAG_ROCKET
-
-                if DebugTab["署名爆炸"]:is_enabled() then
-                    FIRE.ADD_OWNED_EXPLOSION(PLAYER.PLAYER_PED_ID(),
-                        coords.x, coords.y, coords.z, explosion_type,
-                        1000.0, true, false, 0.0)
-                else
-                    FIRE.ADD_EXPLOSION(coords.x, coords.y, coords.z, explosion_type,
-                        1000.0, true, false, 0.0, false)
-                end
-
-                script_util:sleep(100)
-            end
-        end
-    end
-
-    if DebugTab["RPG射击准星位置"]:is_enabled() then
-        draw_crosshair()
-
-        if PAD.IS_CONTROL_PRESSED(0, 51) then
-            local start_pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
-            local end_pos = get_offset_from_cam(1500.0)
-
-            local weapon_hash = 2982836145 -- WEAPON_RPG
-            local owner = 0
-            if DebugTab["署名射击"]:is_enabled() then
-                owner = PLAYER.PLAYER_PED_ID()
-            end
-            local ignore_ent = get_user_vehicle(false)
-            if ignore_ent == 0 then
-                ignore_ent = PLAYER.PLAYER_PED_ID()
-            end
-
-            MISC.SHOOT_SINGLE_BULLET_BETWEEN_COORDS_IGNORE_ENTITY(
-                start_pos.x, start_pos.y, start_pos.z + 2.0,
-                end_pos.x, end_pos.y, end_pos.z,
-                1000.0, true, weapon_hash, owner,
-                true, true, 2000,
-                ignore_ent, 0)
-
-            script_util:sleep(100)
-        end
-    end
-end)
 
 
 
@@ -1596,69 +2068,27 @@ end)
 -- Loop Script
 --------------------------------
 
-script.register_looped("RScript_Main", function()
-    if MainTab["自定义设置生命恢复"]:is_enabled() then
-        if tabs.check_input_value(MainTab["生命恢复速率"], 0.0, 100.0, false) then
-            PLAYER.SET_PLAYER_HEALTH_RECHARGE_MULTIPLIER(PLAYER.PLAYER_ID(), MainTab["生命恢复速率"]:get_value())
-        end
-        if tabs.check_input_value(MainTab["生命恢复程度"], 0.0, 1.0, false) then
-            PLAYER.SET_PLAYER_HEALTH_RECHARGE_MAX_PERCENT(PLAYER.PLAYER_ID(), MainTab["生命恢复程度"]:get_value())
-        end
-    end
-    if MainTab["自定义设置受伤倍数"]:is_enabled() then
-        if tabs.check_input_value(MainTab["自我受伤倍数"], 0.1, 1.0, false) then
-            local value = MainTab["自我受伤倍数"]:get_value()
-            PLAYER.SET_PLAYER_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
-            PLAYER.SET_PLAYER_WEAPON_MINIGUN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
-            PLAYER.SET_PLAYER_MELEE_WEAPON_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
-            PLAYER.SET_PLAYER_VEHICLE_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
-            PLAYER.SET_PLAYER_WEAPON_TAKEDOWN_DEFENSE_MODIFIER(PLAYER.PLAYER_ID(), value)
-        end
-    end
-    if MainTab["步行时人称视角快捷切换"]:is_enabled() then
-        if CAM.IS_FOLLOW_PED_CAM_ACTIVE() then
-            if CAM.GET_FOLLOW_PED_CAM_VIEW_MODE() == 1 or CAM.GET_FOLLOW_PED_CAM_VIEW_MODE() == 2 then
-                CAM.SET_FOLLOW_PED_CAM_VIEW_MODE(4)
-            end
-        end
-    end
-    if MainTab["无限动能回收加速"]:is_enabled() then
-        local vehicle = get_user_vehicle(false)
-        if vehicle ~= 0 then
-            if VEHICLE.GET_VEHICLE_HAS_KERS(vehicle) then
-                local vehicle_ptr = memory.handle_to_ptr(vehicle)
-                local kers_boost_max = vehicle_ptr:add(0x92c):get_float()
-                vehicle_ptr:add(0x930):set_float(kers_boost_max) -- m_kers_boost
-            end
-        end
-    end
-    if MainTab["警察 删除"]:is_enabled() then
-        for _, ped in pairs(entities.get_all_peds_as_handles()) do
-            local hash = ENTITY.GET_ENTITY_MODEL(ped)
-            if hash == 1581098148 or hash == 2974087609 or hash == 2374966032 then
-                delete_entity(ped)
-            end
-        end
-    end
-    if MainTab["警察 死亡"]:is_enabled() then
-        for _, ped in pairs(entities.get_all_peds_as_handles()) do
-            local hash = ENTITY.GET_ENTITY_MODEL(ped)
-            if hash == 1581098148 or hash == 2974087609 or hash == 2374966032 then
-                SET_ENTITY_HEALTH(ped, 0)
-            end
-        end
-    end
 
+script.register_looped("RScript.Main", function()
+    for key, item in pairs(MainLoop) do
+        if item.toggle:is_enabled() then
+            item.on_tick()
 
-    if MissionTab["跳过NPC对话"]:is_enabled() then
-        if AUDIO.IS_SCRIPTED_CONVERSATION_ONGOING() then
-            AUDIO.STOP_SCRIPTED_CONVERSATION(false)
+            if item.on_stop ~= nil then
+                MainLoop[key].need_to_run_stop = true
+            end
+        else
+            if item.need_to_run_stop then
+                item.on_stop()
+                MainLoop[key].need_to_run_stop = false
+            end
         end
     end
 end)
 
-script.register_looped("RScript_自动收集财物", function(script_util)
-    if MissionTab["自动收集财物"]:is_enabled() then
+
+script.register_looped("RScript.AutoCollect", function(script_util)
+    if MenuMission["自动收集财物"]:is_enabled() then
         if TASK.GET_IS_TASK_ACTIVE(PLAYER.PLAYER_PED_ID(), 135) then
             PAD.SET_CONTROL_VALUE_NEXT_FRAME(0, 237, 1)
             script_util:sleep(30)
@@ -1666,11 +2096,13 @@ script.register_looped("RScript_自动收集财物", function(script_util)
     end
 end)
 
-script.register_looped("RScript_Manage_Entity", function()
-    if manage_entity["vehicle"].enable and tab_vehicle_list:is_selected() then
+
+script.register_looped("RScript.ManageEntity", function()
+    if manage_entity["vehicle"].enable and menu_vehicle_list:is_selected() then
         manage_entity.gui.update_info("vehicle")
     end
-    if manage_entity["ped"].enable and tab_ped_list:is_selected() then
+
+    if manage_entity["ped"].enable and menu_ped_list:is_selected() then
         manage_entity.gui.update_info("ped")
     end
 end)

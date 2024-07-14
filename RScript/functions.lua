@@ -42,6 +42,20 @@ function SET_ENTITY_HEALTH(entity, health)
     ENTITY.SET_ENTITY_HEALTH(entity, health, 0, 0)
 end
 
+function SET_VEHICLE_ENGINE_ON(vehicle, toggle)
+    VEHICLE.SET_VEHICLE_ENGINE_ON(vehicle, toggle, true, false)
+end
+
+function SET_VEHICLE_ON_GROUND_PROPERLY(vehicle)
+    VEHICLE.SET_VEHICLE_ON_GROUND_PROPERLY(vehicle, 5.0)
+end
+
+function GET_ENTITY_SCRIPT(entity)
+    local entity_script = ENTITY.GET_ENTITY_SCRIPT(entity, 0)
+    if entity_script == nil then return "" end
+    return string.lower(entity_script)
+end
+
 ----------------------------------------
 -- Local Player Functions
 ----------------------------------------
@@ -101,22 +115,11 @@ end
 
 function tp_into_vehicle(vehicle, door, driver, seat)
     seat = seat or -1
-    -- unlock doors
-    VEHICLE.SET_VEHICLE_DOORS_LOCKED(vehicle, 1)
-    VEHICLE.SET_VEHICLE_DOORS_LOCKED_FOR_ALL_PLAYERS(vehicle, false)
-    VEHICLE.SET_VEHICLE_DOORS_LOCKED_FOR_NON_SCRIPT_PLAYERS(vehicle, false)
-    VEHICLE.SET_VEHICLE_DOORS_LOCKED_FOR_ALL_TEAMS(vehicle, false)
-    VEHICLE.SET_DONT_ALLOW_PLAYER_TO_ENTER_VEHICLE_IF_LOCKED_FOR_PLAYER(vehicle, false)
+    unlock_vehicle_doors(vehicle)
+    clear_vehicle_wanted(vehicle)
     -- unfreeze
     ENTITY.FREEZE_ENTITY_POSITION(vehicle, false)
-    VEHICLE.SET_VEHICLE_IS_CONSIDERED_BY_PLAYER(vehicle, true)
     VEHICLE.SET_VEHICLE_UNDRIVEABLE(vehicle, false)
-    -- clear wanted
-    VEHICLE.SET_VEHICLE_IS_WANTED(vehicle, false)
-    VEHICLE.SET_VEHICLE_INFLUENCES_WANTED_LEVEL(vehicle, false)
-    VEHICLE.SET_VEHICLE_HAS_BEEN_OWNED_BY_PLAYER(vehicle, true)
-    VEHICLE.SET_VEHICLE_IS_STOLEN(vehicle, false)
-    VEHICLE.SET_POLICE_FOCUS_WILL_TRACK_VEHICLE(vehicle, false)
 
     if door == "delete" then
         VEHICLE.SET_VEHICLE_DOOR_BROKEN(vehicle, 0, true) -- left front door
@@ -143,6 +146,20 @@ function tp_vehicle_to_me(vehicle, door, driver, seat)
     ENTITY_HEADING(vehicle, user_heading())
     tp_entity_to_me(vehicle)
     tp_into_vehicle(vehicle, door, driver, seat)
+end
+
+function tp_pickup_to_me(pickup, attachToSelf)
+    if ENTITY.IS_ENTITY_ATTACHED(pickup) then
+        ENTITY.DETACH_ENTITY(pickup, true, true)
+        ENTITY.SET_ENTITY_VISIBLE(pickup, true, false)
+    end
+    OBJECT.SET_PICKUP_OBJECT_COLLECTABLE_IN_VEHICLE(pickup)
+
+    if attachToSelf then
+        OBJECT.ATTACH_PORTABLE_PICKUP_TO_PED(pickup, PLAYER.PLAYER_PED_ID())
+    else
+        tp_entity_to_me(pickup)
+    end
 end
 
 function draw_line_to_entity(entity, colour)
@@ -172,63 +189,6 @@ function tp_entity_to_entity(tpEntity, toEntity, offsetX, offsetY, offsetZ)
     offsetZ = offsetZ or 0.0
     local coords = ENTITY.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(toEntity, offsetX, offsetY, offsetZ)
     TP_ENTITY(tpEntity, coords)
-end
-
-function get_all_entities(Type)
-    Type = string.lower(Type)
-
-    if Type == "ped" then
-        return entities.get_all_peds_as_handles()
-    end
-    if Type == "vehicle" then
-        return entities.get_all_vehicles_as_handles()
-    end
-    if Type == "object" then
-        return entities.get_all_objects_as_handles()
-    end
-
-    return {}
-end
-
-function get_entities_by_hash(Type, isMission, ...)
-    local entity_list = {}
-    local hash_list = { ... }
-
-    for key, ent in pairs(get_all_entities(Type)) do
-        local EntityHash = ENTITY.GET_ENTITY_MODEL(ent)
-        for _, Hash in pairs(hash_list) do
-            if EntityHash == Hash then
-                if isMission then
-                    if ENTITY.IS_ENTITY_A_MISSION_ENTITY(ent) then
-                        table.insert(entity_list, ent)
-                    end
-                else
-                    table.insert(entity_list, ent)
-                end
-            end
-        end
-    end
-
-    return entity_list
-end
-
-function get_mission_entities_by_hash(entityType, hashList, callback)
-    local entity_list = {}
-    for key, ent in pairs(get_all_entities(entityType)) do
-        if ENTITY.IS_ENTITY_A_MISSION_ENTITY(ent) then
-            for _, Hash in pairs(hashList) do
-                if EntityHash == Hash then
-                    table.insert(entity_list, ent)
-
-                    if callback ~= nil then
-                        callback(ent)
-                    end
-                end
-            end
-        end
-    end
-
-    return entity_list
 end
 
 function set_entity_godmode(entity, toggle)
@@ -263,24 +223,129 @@ function is_hostile_entity(entity)
 end
 
 function delete_entity(ent)
-    if ENTITY.DOES_ENTITY_EXIST(ent) then
-        ENTITY.DETACH_ENTITY(ent, true, true)
-        ENTITY.SET_ENTITY_VISIBLE(ent, false, false)
-        NETWORK.NETWORK_SET_ENTITY_ONLY_EXISTS_FOR_PARTICIPANTS(ent, true)
-        ENTITY.SET_ENTITY_COORDS_NO_OFFSET(ent, 0.0, 0.0, -1000.0, false, false, false)
-        ENTITY.SET_ENTITY_COLLISION(ent, false, false)
-        ENTITY.SET_ENTITY_AS_MISSION_ENTITY(ent, true, true)
-        ENTITY.SET_ENTITY_AS_NO_LONGER_NEEDED(ent)
-        ENTITY.DELETE_ENTITY(ent)
+    if not ENTITY.DOES_ENTITY_EXIST(ent) then
+        return
     end
+
+    if not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(ent) then
+        entities.take_control_of(ent)
+    end
+
+    ENTITY.DETACH_ENTITY(ent, true, true)
+    ENTITY.SET_ENTITY_VISIBLE(ent, false, false)
+    NETWORK.NETWORK_SET_ENTITY_ONLY_EXISTS_FOR_PARTICIPANTS(ent, true)
+    ENTITY.SET_ENTITY_COORDS_NO_OFFSET(ent, 0.0, 0.0, -1000.0, false, false, false)
+    ENTITY.SET_ENTITY_COLLISION(ent, false, false)
+    ENTITY.SET_ENTITY_AS_MISSION_ENTITY(ent, true, true)
+    ENTITY.SET_ENTITY_AS_NO_LONGER_NEEDED(ent)
+    ENTITY.DELETE_ENTITY(ent)
 end
 
-function is_mission_script_entity(entity)
-    local entity_script = ENTITY.GET_ENTITY_SCRIPT(entity, 0)
-    if entity_script == nil then return false end
+----------------------------------------
+-- Entities Functions
+----------------------------------------
 
-    entity_script = string.lower(entity_script)
-    return entity_script == "fm_mission_controller" or entity_script == "fm_mission_controller_2020"
+--- @param entityType ENTITY_TYPE
+--- @return table<int, Entity>
+function get_all_entities(entityType)
+    if entityType == ENTITY_PED then
+        return entities.get_all_peds_as_handles()
+    end
+    if entityType == ENTITY_VEHICLE then
+        return entities.get_all_vehicles_as_handles()
+    end
+    if entityType == ENTITY_OBJECT then
+        return entities.get_all_objects_as_handles()
+    end
+
+    return {}
+end
+
+--- @param entityType ENTITY_TYPE
+--- @param isMission boolean
+--- @param ... Hash
+--- @return table<int, Entity>
+function get_entities_by_hash(entityType, isMission, ...)
+    local entity_list = {}
+    local hash_list = { ... }
+
+    for key, entity in pairs(get_all_entities(entityType)) do
+        local entity_hash = ENTITY.GET_ENTITY_MODEL(entity)
+        for _, hash in pairs(hash_list) do
+            if entity_hash == hash then
+                if isMission then
+                    if ENTITY.IS_ENTITY_A_MISSION_ENTITY(entity) then
+                        table.insert(entity_list, entity)
+                    end
+                else
+                    table.insert(entity_list, entity)
+                end
+            end
+        end
+    end
+
+    return entity_list
+end
+
+function get_mission_entities_by_hash2(entityType, hashList, callback)
+    local entity_list = {}
+    for key, ent in pairs(get_all_entities(entityType)) do
+        if ENTITY.IS_ENTITY_A_MISSION_ENTITY(ent) then
+            for _, Hash in pairs(hashList) do
+                if EntityHash == Hash then
+                    table.insert(entity_list, ent)
+
+                    if callback ~= nil then
+                        callback(ent)
+                    end
+                end
+            end
+        end
+    end
+
+    return entity_list
+end
+
+--- @param entityType ENTITY_TYPE
+--- @param scriptName string
+--- @param ... Hash
+--- @return table<int, Entity>
+function get_mission_entities_by_hash(entityType, scriptName, ...)
+    if not is_script_running(scriptName) then
+        return {}
+    end
+
+    local entity_list = {}
+    local hash_list = { ... }
+
+    for key, entity in pairs(get_all_entities(entityType)) do
+        local entity_hash = ENTITY.GET_ENTITY_MODEL(entity)
+        for _, hash in pairs(hash_list) do
+            if entity_hash == hash then
+                if GET_ENTITY_SCRIPT(entity) == scriptName then
+                    table.insert(entity_list, entity)
+                end
+            end
+        end
+    end
+
+    return entity_list
+end
+
+--- @param scriptName string
+--- @return table<int, Entity>
+function get_mission_pickups(scriptName)
+    if not is_script_running(scriptName) then
+        return {}
+    end
+
+    local entity_list = {}
+    for _, entity in pairs(get_all_pickups_as_handles()) do
+        if GET_ENTITY_SCRIPT(entity) == scriptName then
+            table.insert(entity_list, entity)
+        end
+    end
+    return entity_list
 end
 
 ----------------------------------------
@@ -354,10 +419,10 @@ function strong_ped_combat(ped, isGodmode, canRagdoll)
     PED.SET_PED_SEEING_RANGE(ped, 500.0)
     PED.SET_PED_HEARING_RANGE(ped, 500.0)
     PED.SET_PED_ID_RANGE(ped, 500.0)
-    PED.SET_PED_VISUAL_FIELD_MIN_ANGLE(ped, 90.0)
-    PED.SET_PED_VISUAL_FIELD_MAX_ANGLE(ped, 90.0)
-    PED.SET_PED_VISUAL_FIELD_MIN_ELEVATION_ANGLE(ped, 90.0)
-    PED.SET_PED_VISUAL_FIELD_MAX_ELEVATION_ANGLE(ped, 90.0)
+    PED.SET_PED_VISUAL_FIELD_MIN_ANGLE(ped, -180.0)
+    PED.SET_PED_VISUAL_FIELD_MAX_ANGLE(ped, 180.0)
+    PED.SET_PED_VISUAL_FIELD_MIN_ELEVATION_ANGLE(ped, -180.0)
+    PED.SET_PED_VISUAL_FIELD_MAX_ELEVATION_ANGLE(ped, 180.0)
     PED.SET_PED_VISUAL_FIELD_CENTER_ANGLE(ped, 90.0)
 
     -- WEAPON
@@ -427,6 +492,10 @@ function strong_ped_combat(ped, isGodmode, canRagdoll)
     PED.SET_PED_COMBAT_ATTRIBUTES(ped, 78, true)  -- Disable All Randoms Flee
 end
 
+function get_player_from_ped(ped)
+    return NETWORK.NETWORK_GET_PLAYER_INDEX_FROM_PED(ped)
+end
+
 ----------------------------------------
 -- Vehicle Functions
 ----------------------------------------
@@ -440,6 +509,34 @@ end
 function get_vehicle_display_name_by_hash(hash)
     local label_name = VEHICLE.GET_DISPLAY_NAME_FROM_VEHICLE_MODEL(hash)
     return HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(label_name)
+end
+
+function upgrade_vehicle(vehicle)
+    VEHICLE.SET_VEHICLE_MOD_KIT(vehicle, 0)
+    for i = 0, 50 do
+        if i ~= 48 and i ~= 23 and i ~= 24 then
+            local mod_num = VEHICLE.GET_NUM_VEHICLE_MODS(vehicle, i)
+            if mod_num > 0 then
+                VEHICLE.SET_VEHICLE_MOD(vehicle, i, mod_num - 1, false)
+            end
+        end
+    end
+
+    VEHICLE.SET_VEHICLE_TYRES_CAN_BURST(vehicle, false)
+    VEHICLE.SET_VEHICLE_WHEELS_CAN_BREAK(vehicle, false)
+    VEHICLE.SET_VEHICLE_HAS_UNBREAKABLE_LIGHTS(vehicle, true)
+    VEHICLE.SET_VEHICLE_CAN_ENGINE_MISSFIRE(vehicle, false)
+    VEHICLE.SET_VEHICLE_CAN_LEAK_OIL(vehicle, false)
+    VEHICLE.SET_VEHICLE_CAN_LEAK_PETROL(vehicle, false)
+
+    VEHICLE.SET_DISABLE_VEHICLE_ENGINE_FIRES(vehicle, true)
+    VEHICLE.SET_DISABLE_VEHICLE_PETROL_TANK_FIRES(vehicle, true)
+    VEHICLE.SET_DISABLE_VEHICLE_PETROL_TANK_DAMAGE(vehicle, true)
+
+    for i = 0, 3 do
+        VEHICLE.SET_DOOR_ALLOWED_TO_BE_BROKEN_OFF(vehicle, i, false)
+    end
+    VEHICLE.SET_HELI_TAIL_BOOM_CAN_BREAK_OFF(vehicle, false)
 end
 
 function fix_vehicle(vehicle)
@@ -505,29 +602,50 @@ function unlock_vehicle_doors(vehicle)
     VEHICLE.SET_VEHICLE_DOORS_LOCKED_FOR_NON_SCRIPT_PLAYERS(vehicle, false)
     VEHICLE.SET_VEHICLE_DOORS_LOCKED_FOR_ALL_TEAMS(vehicle, false)
     VEHICLE.SET_DONT_ALLOW_PLAYER_TO_ENTER_VEHICLE_IF_LOCKED_FOR_PLAYER(vehicle, false)
+
+    VEHICLE.SET_VEHICLE_IS_CONSIDERED_BY_PLAYER(vehicle, true)
+    VEHICLE.SET_VEHICLE_EXCLUSIVE_DRIVER(vehicle, 0, 0)
+end
+
+function clear_vehicle_wanted(vehicle)
+    VEHICLE.SET_VEHICLE_HAS_BEEN_OWNED_BY_PLAYER(vehicle, true)
+    VEHICLE.SET_VEHICLE_IS_STOLEN(vehicle, false)
+    VEHICLE.SET_VEHICLE_IS_WANTED(vehicle, false)
+    VEHICLE.SET_POLICE_FOCUS_WILL_TRACK_VEHICLE(vehicle, false)
+    VEHICLE.SET_VEHICLE_INFLUENCES_WANTED_LEVEL(vehicle, false)
+    VEHICLE.SET_DISABLE_WANTED_CONES_RESPONSE(vehicle, true)
 end
 
 ----------------------------------------
 -- Network Functions
 ----------------------------------------
 
+-- function request_control(entity, timeout)
+--     if is_in_session() and not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity) then
+--         timeout = timeout or 2
+--         script.run_in_fiber(function(script_util)
+--             local netid = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(entity)
+--             NETWORK.SET_NETWORK_ID_CAN_MIGRATE(netid, true)
+--             local start_time = os.time()
+--             while not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity) do
+--                 if os.time() - start_time >= timeout then
+--                     break
+--                 end
+--                 NETWORK.NETWORK_REQUEST_CONTROL_OF_ENTITY(entity)
+--                 script_util:yield()
+--             end
+--         end)
+--     end
+--     return NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity)
+-- end
+
 function request_control(entity, timeout)
-    if NETWORK.NETWORK_IS_SESSION_STARTED() and not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity) then
-        timeout = timeout or 2
-        script.run_in_fiber(function(script_util)
-            local netid = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(entity)
-            NETWORK.SET_NETWORK_ID_CAN_MIGRATE(netid, true)
-            local start_time = os.time()
-            while not NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity) do
-                if os.time() - start_time >= timeout then
-                    break
-                end
-                NETWORK.NETWORK_REQUEST_CONTROL_OF_ENTITY(entity)
-                script_util:yield()
-            end
-        end)
+    if NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity) then
+        return true
     end
-    return NETWORK.NETWORK_HAS_CONTROL_OF_ENTITY(entity)
+
+    timeout = timeout or 300
+    return entities.take_control_of(entity, timeout)
 end
 
 function request_control2(entity, timeout)
@@ -543,7 +661,7 @@ function has_control_entity(entity)
 end
 
 function get_entity_owner(entity)
-    if NETWORK.NETWORK_IS_SESSION_STARTED() and NETWORK.NETWORK_GET_ENTITY_IS_NETWORKED(entity) then
+    if is_in_session() and NETWORK.NETWORK_GET_ENTITY_IS_NETWORKED(entity) then
         local ptr = memory.handle_to_ptr(entity)
         local netObject = ptr:add(0xD0):deref()
         if netObject:is_null() then
@@ -553,6 +671,48 @@ function get_entity_owner(entity)
         return owner_id
     end
     return PLAYER.PLAYER_ID()
+end
+
+function is_in_session()
+    return NETWORK.NETWORK_IS_SESSION_STARTED() and not is_script_running("maintransition")
+end
+
+----------------------------------------
+-- Script Functions
+----------------------------------------
+
+function is_script_running(script_name)
+    return SCRIPT.GET_NUMBER_OF_THREADS_RUNNING_THE_SCRIPT_WITH_THIS_HASH(joaat(script_name)) > 0
+end
+
+function start_game_script(script_name)
+    script.run_in_fiber(function(script_util)
+        if is_script_running(script_name) then
+            return true
+        end
+
+        SCRIPT.REQUEST_SCRIPT(script_name)
+        while not SCRIPT.HAS_SCRIPT_LOADED(script_name) do
+            script_util:yield()
+        end
+        SYSTEM.START_NEW_SCRIPT(script_name, 5000)
+        SCRIPT.SET_SCRIPT_AS_NO_LONGER_NEEDED(script_name)
+        return true
+    end)
+end
+
+function get_running_mission_controller_script()
+    local script_name = "fm_mission_controller"
+    if is_script_running(script_name) then
+        return script_name
+    end
+
+    script_name = "fm_mission_controller_2020"
+    if is_script_running(script_name) then
+        return script_name
+    end
+
+    return nil
 end
 
 ----------------------------------------
@@ -645,28 +805,20 @@ v3 = {
     end
 }
 
-function is_script_running(script_name)
-    return SCRIPT.GET_NUMBER_OF_THREADS_RUNNING_THE_SCRIPT_WITH_THIS_HASH(joaat(script_name)) > 0
-end
-
-function start_game_script(script_name)
-    script.run_in_fiber(function(script_util)
-        if is_script_running(script_name) then
-            return true
-        end
-
-        SCRIPT.REQUEST_SCRIPT(script_name)
-        while not SCRIPT.HAS_SCRIPT_LOADED(script_name) do
-            script_util:yield()
-        end
-        SYSTEM.START_NEW_SCRIPT(script_name, 5000)
-        SCRIPT.SET_SCRIPT_AS_NO_LONGER_NEEDED(script_name)
-        return true
-    end)
+function get_label_text(label)
+    return HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(label)
 end
 
 function notify(title, message)
     gui.show_message("[RScript] " .. title, message)
+end
+
+function toast(text)
+    gui.show_message("[RScript]", tostring(text))
+end
+
+function print(text)
+    log.info(tostring(text))
 end
 
 function draw_string(text, x, y, scale, font)
@@ -710,7 +862,88 @@ function reverse_weapon_hash(hash)
 end
 
 ----------------------------------------
--- Tab Functions
+-- Pickup Pool Functions
+----------------------------------------
+
+PickupPool = {}
+PickupPool.__index = PickupPool
+
+function PickupPool:is_vaild(index)
+    local bit_value = self.m_bit_array:add(index):get_byte()
+
+    return bit_value > 1 and bit_value < 80
+end
+
+function PickupPool:get_address(index)
+    return self.m_pool_address:add(self.m_item_size * index)
+end
+
+function PickupPool.init()
+    local ptr = memory.scan_pattern("48 8B 05 ? ? ? ? 0F B7 50 10 48 8B 05")
+    if ptr:is_null() then -- Check for null pointer.
+        log.warning("Pickup Pool pattern scan failed")
+        return
+    end
+    local m_pickup_pool = ptr:add(0xE):rip():deref()
+
+    PickupPool.m_pool_address = m_pickup_pool:deref()
+    PickupPool.m_bit_array = m_pickup_pool:add(0x8):deref()
+    PickupPool.m_size = m_pickup_pool:add(0x10):get_dword()
+    PickupPool.m_item_size = m_pickup_pool:add(0x14):get_dword()
+
+    -- print(string.format(
+    --     "m_pickup_pool: %x, m_pool_address: %x, m_bit_array: %x",
+    --     m_pickup_pool:get_address(),
+    --     PickupPool.m_pool_address:get_address(),
+    --     PickupPool.m_bit_array:get_address()
+    -- ))
+
+    PickupPool.initialized = true
+end
+
+PickupPool.init()
+
+--- @return table<int, pointer>
+function get_all_pickups_as_pointers()
+    local self = setmetatable({}, PickupPool)
+    if not self.initialized then
+        return {}
+    end
+
+    local pickups = {}
+
+    for index = 0, self.m_size - 1 do
+        if self:is_vaild(index) then
+            local addr = self:get_address(index)
+            table.insert(pickups, addr)
+        end
+    end
+
+    return pickups
+end
+
+--- @return table<int, Pickup>
+function get_all_pickups_as_handles()
+    local self = setmetatable({}, PickupPool)
+    if not self.initialized then
+        return {}
+    end
+
+    local pickups = {}
+
+    for index = 0, self.m_size - 1 do
+        if self:is_vaild(index) then
+            local addr = self:get_address(index)
+            local handle = memory.ptr_to_handle(addr)
+            table.insert(pickups, handle)
+        end
+    end
+
+    return pickups
+end
+
+----------------------------------------
+-- Tab Functions (Old)
 ----------------------------------------
 
 tabs = {}
@@ -810,4 +1043,122 @@ function tabs.check_input_value(input, min_value, max_value, show_warning)
         return false
     end
     return true
+end
+
+----------------------------------------
+-- Menu Functions
+----------------------------------------
+
+menu = {}
+
+function menu.add_button(menu_parent, name, help_text, on_click)
+    if help_text ~= nil then
+        name = name .. " " .. help_text
+    end
+    menu_parent:add_button(name, on_click)
+end
+
+function menu.add_input_float(menu_table, name, default_value, help_text)
+    local t = menu_table._parent:add_input_float(name)
+
+    if default_value ~= nil then
+        t:set_value(default_value)
+    end
+    if help_text ~= nil then
+        t:set_text(name .. " " .. help_text)
+    end
+
+    menu_table[name] = t
+    return t
+end
+
+function menu.add_input_int(menu_table, name, default_value, help_text)
+    local t = menu_table._parent:add_input_int(name)
+
+    if default_value ~= nil then
+        t:set_value(default_value)
+    end
+    if help_text ~= nil then
+        t:set_text(name .. " " .. help_text)
+    end
+
+    menu_table[name] = t
+    return t
+end
+
+function menu.add_input_string(menu_table, name, default_value, help_text)
+    local t = menu_table._parent:add_input_string(name)
+
+    if default_value ~= nil then
+        t:set_value(default_value)
+    end
+    if help_text ~= nil then
+        t:set_text(name .. " " .. help_text)
+    end
+
+    menu_table[name] = t
+    return t
+end
+
+function menu.add_toggle(menu_table, name, enabled, help_text)
+    local t = menu_table._parent:add_checkbox(name)
+
+    if enabled ~= nil then
+        t:set_enabled(enabled)
+    end
+    if help_text ~= nil then
+        t:set_text(name .. " " .. help_text)
+    end
+
+    menu_table[name] = t
+    return t
+end
+
+function menu.add_toggle_loop(menu_table, name, help_text, on_tick, on_stop)
+    local t = menu_table._parent:add_checkbox(name)
+
+    if help_text and help_text ~= "" then
+        t:set_text(name .. " " .. help_text)
+    end
+    if on_tick then
+        MainLoop[name] = {
+            toggle = t,
+            on_tick = on_tick,
+            on_stop = on_stop,
+            need_to_run_stop = false
+        }
+    end
+
+    return t
+end
+
+function menu.add_toggle_button(menu_table, name, toggle, on_change)
+    local t
+    local _toggle = toggle
+    t = menu_table._parent:add_button(string.format("%s: %s", name, toggle and "开" or "关"), function()
+        local new_toggle = not _toggle
+
+        _toggle = new_toggle
+        t:set_text(string.format("%s: %s", name, new_toggle and "开" or "关"))
+
+        if on_change ~= nil then
+            on_change(new_toggle)
+        end
+    end)
+end
+
+function menu.get_input_value(input, min_value, max_value)
+    local input_value = input:get_value()
+
+    if input_value < min_value then
+        input:set_value(min_value)
+        return min_value
+    end
+
+    if input_value > max_value then
+        input:set_value(max_value)
+        return max_value
+    end
+
+    return input_value
 end
