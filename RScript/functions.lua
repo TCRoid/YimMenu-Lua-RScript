@@ -879,26 +879,32 @@ function PickupPool:get_address(index)
 end
 
 function PickupPool.init()
-    local ptr = memory.scan_pattern("48 8B 05 ? ? ? ? 0F B7 50 10 48 8B 05")
-    if ptr:is_null() then -- Check for null pointer.
-        log.warning("Pickup Pool pattern scan failed")
-        return
-    end
-    local m_pickup_pool = ptr:add(0xE):rip():deref()
+    script.run_in_fiber(function()
+        local ptr = memory.scan_pattern("48 8B 05 ? ? ? ? 0F B7 50 10 48 8B 05")
+        if ptr:is_null() then -- Check for null pointer.
+            log.warning("Pickup Pool pattern scan failed")
+            return
+        end
+        local m_pickup_pool = ptr:add(0xE):rip():deref()
+        if m_pickup_pool:is_null() then -- Check for null pointer.
+            log.warning("Pickup Pool pattern scan failed")
+            return
+        end
 
-    PickupPool.m_pool_address = m_pickup_pool:deref()
-    PickupPool.m_bit_array = m_pickup_pool:add(0x8):deref()
-    PickupPool.m_size = m_pickup_pool:add(0x10):get_dword()
-    PickupPool.m_item_size = m_pickup_pool:add(0x14):get_dword()
+        PickupPool.m_pool_address = m_pickup_pool:deref()
+        PickupPool.m_bit_array = m_pickup_pool:add(0x8):deref()
+        PickupPool.m_size = m_pickup_pool:add(0x10):get_dword()
+        PickupPool.m_item_size = m_pickup_pool:add(0x14):get_dword()
 
-    -- print(string.format(
-    --     "m_pickup_pool: %x, m_pool_address: %x, m_bit_array: %x",
-    --     m_pickup_pool:get_address(),
-    --     PickupPool.m_pool_address:get_address(),
-    --     PickupPool.m_bit_array:get_address()
-    -- ))
+        -- print(string.format(
+        --     "m_pickup_pool: %x, m_pool_address: %x, m_bit_array: %x",
+        --     m_pickup_pool:get_address(),
+        --     PickupPool.m_pool_address:get_address(),
+        --     PickupPool.m_bit_array:get_address()
+        -- ))
 
-    PickupPool.initialized = true
+        PickupPool.initialized = true
+    end)
 end
 
 PickupPool.init()

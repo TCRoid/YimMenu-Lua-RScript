@@ -2,17 +2,19 @@
 -- Author: Rostal
 --------------------------------
 
-local SUPPORT_GAME_VERSION <const> = "1.69-3258"
+local SUPPORT_GAME_VERSION <const> = "1.69-3274"
 
 --#region check game version
 
-local build_version = memory.scan_pattern("8B C3 33 D2 C6 44 24 20"):add(0x24):rip()
-local online_version = build_version:add(0x20)
-local CURRENT_GAME_VERSION <const> = string.format("%s-%s", online_version:get_string(), build_version:get_string())
+script.run_in_fiber(function()
+    local build_version = memory.scan_pattern("8B C3 33 D2 C6 44 24 20"):add(0x24):rip()
+    local online_version = build_version:add(0x20)
+    local CURRENT_GAME_VERSION <const> = string.format("%s-%s", online_version:get_string(), build_version:get_string())
 
-if SUPPORT_GAME_VERSION ~= CURRENT_GAME_VERSION then
-    toast("未兼容当前游戏版本, 部分功能可能会失效")
-end
+    if SUPPORT_GAME_VERSION ~= CURRENT_GAME_VERSION then
+        gui.show_message("[RScript]", "未兼容当前游戏版本, 部分功能可能会失效")
+    end
+end)
 
 --#endregion
 
