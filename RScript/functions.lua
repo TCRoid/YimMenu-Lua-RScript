@@ -38,6 +38,13 @@ function DRAW_LINE(start_pos, end_pos, colour)
         colour.r, colour.g, colour.b, colour.a)
 end
 
+function DRAW_BOX(start_pos, end_pos, colour)
+    colour = colour or { r = 255, g = 0, b = 255, a = 255 }
+    GRAPHICS.DRAW_BOX(start_pos.x, start_pos.y, start_pos.z,
+        end_pos.x, end_pos.y, end_pos.z,
+        colour.r, colour.g, colour.b, colour.a)
+end
+
 function SET_ENTITY_HEALTH(entity, health)
     ENTITY.SET_ENTITY_HEALTH(entity, health, 0, 0)
 end
@@ -166,6 +173,11 @@ function draw_line_to_entity(entity, colour)
     local player_pos = ENTITY.GET_ENTITY_COORDS(PLAYER.PLAYER_PED_ID())
     local ent_pos = ENTITY.GET_ENTITY_COORDS(entity)
     DRAW_LINE(player_pos, ent_pos, colour)
+
+    local size = 0.25
+    local box_pos1 = { x = ent_pos.x - size, y = ent_pos.y + size, z = ent_pos.z + 1000.0 }
+    local box_pos2 = { x = ent_pos.x + size, y = ent_pos.y - size, z = ent_pos.z - 1000.0 }
+    DRAW_BOX(box_pos1, box_pos2, colour)
 end
 
 ----------------------------------------
@@ -503,23 +515,28 @@ end
 function get_vehicle_display_name(vehicle)
     local hash = ENTITY.GET_ENTITY_MODEL(vehicle)
     local label_name = VEHICLE.GET_DISPLAY_NAME_FROM_VEHICLE_MODEL(hash)
-    return HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(label_name)
+    return get_label_text(label_name)
 end
 
 function get_vehicle_display_name_by_hash(hash)
     local label_name = VEHICLE.GET_DISPLAY_NAME_FROM_VEHICLE_MODEL(hash)
-    return HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(label_name)
+    return get_label_text(label_name)
 end
 
 function upgrade_vehicle(vehicle)
     VEHICLE.SET_VEHICLE_MOD_KIT(vehicle, 0)
+
+    local excluded_mod_types = { 14, 15, 23, 24, 48 }
     for i = 0, 50 do
-        if i ~= 48 and i ~= 23 and i ~= 24 then
+        if not table.contains(excluded_mod_types, i) then
             local mod_num = VEHICLE.GET_NUM_VEHICLE_MODS(vehicle, i)
             if mod_num > 0 then
                 VEHICLE.SET_VEHICLE_MOD(vehicle, i, mod_num - 1, false)
             end
         end
+    end
+    for i = 17, 22 do
+        VEHICLE.TOGGLE_VEHICLE_MOD(vehicle, i, true)
     end
 
     VEHICLE.SET_VEHICLE_TYRES_CAN_BURST(vehicle, false)
@@ -616,6 +633,17 @@ function clear_vehicle_wanted(vehicle)
     VEHICLE.SET_DISABLE_WANTED_CONES_RESPONSE(vehicle, true)
 end
 
+function is_any_player_in_vehicle(vehicle)
+    for seat = -1, VEHICLE.GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS(vehicle) - 1 do
+        if not VEHICLE.IS_VEHICLE_SEAT_FREE(vehicle, seat, false) then
+            local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, seat, false)
+            if PED.IS_PED_A_PLAYER(ped) then
+                return true
+            end
+        end
+    end
+end
+
 ----------------------------------------
 -- Network Functions
 ----------------------------------------
@@ -699,6 +727,10 @@ function start_game_script(script_name)
         SCRIPT.SET_SCRIPT_AS_NO_LONGER_NEEDED(script_name)
         return true
     end)
+end
+
+function is_mission_controller_script_running()
+    return is_script_running("fm_mission_controller") or is_script_running("fm_mission_controller_2020")
 end
 
 function get_running_mission_controller_script()
@@ -805,8 +837,15 @@ v3 = {
     end
 }
 
-function get_label_text(label)
-    return HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(label)
+function get_label_text(labelName)
+    local text = HUD.GET_FILENAME_FOR_AUDIO_CONVERSATION(labelName)
+    if text == "" or text == "NULL" then
+        return text
+    end
+
+    text = string.gsub(text, "~n~", "\n")
+    text = string.gsub(text, "µ", " ")
+    return text
 end
 
 function notify(title, message)
@@ -821,16 +860,55 @@ function print(text)
     log.info(tostring(text))
 end
 
-function draw_string(text, x, y, scale, font)
+--- @param text string
+--- @param x float
+--- @param y float
+--- @param scale? float 1.0 = normal / 2.0 = double
+--- @param color? table<key, int> r, g, b, a should between 0 and 255. Alpha 0 is invisible.
+function draw_text(text, x, y, scale, color)
     HUD.BEGIN_TEXT_COMMAND_DISPLAY_TEXT("STRING")
-    HUD.SET_TEXT_FONT(font or 0)
-    HUD.SET_TEXT_SCALE(scale, scale)
-    HUD.SET_TEXT_DROP_SHADOW()
-    HUD.SET_TEXT_WRAP(0.0, 1.0)
-    HUD.SET_TEXT_DROPSHADOW(1, 0, 0, 0, 0)
-    HUD.SET_TEXT_OUTLINE()
-    HUD.SET_TEXT_EDGE(1, 0, 0, 0, 0)
+
     HUD.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME(text)
+
+    --[[
+        FONT_STANDARD = 0,
+        FONT_CURSIVE = 1,
+        FONT_ROCKSTAR_TAG = 2,
+        FONT_LEADERBOARD = 3,
+        FONT_CONDENSED = 4,
+        FONT_STYLE_FIXED_WIDTH_NUMBERS = 5,
+        FONT_CONDENSED_NOT_GAMERNAME = 6,
+        FONT_STYLE_PRICEDOWN = 7,
+        FONT_STYLE_TAXI = 8
+    ]]
+    -- Set the text font
+    HUD.SET_TEXT_FONT(0)
+
+    if scale then
+        -- Sets the text scale by using a multiplier
+        HUD.SET_TEXT_SCALE(scale, scale)
+    end
+
+    if color then
+        -- Sets the colour of the text
+        HUD.SET_TEXT_COLOUR(color.r, color.g, color.b, color.a)
+    end
+
+    -- Sets points where text will wrap round and displayed on a new line
+    HUD.SET_TEXT_WRAP(0.0, 1.0)
+
+    -- Draws an drop shadow behind the text
+    HUD.SET_TEXT_DROP_SHADOW()
+
+    -- Draw a drop shadow behind onscreen intro text
+    HUD.SET_TEXT_DROPSHADOW(1, 0, 0, 0, 0)
+
+    -- Draws an outline round the entire text
+    HUD.SET_TEXT_OUTLINE()
+
+    -- Draws an outline round the entire text
+    HUD.SET_TEXT_EDGE(1, 0, 0, 0, 0)
+
     HUD.END_TEXT_COMMAND_DISPLAY_TEXT(x, y, 0)
 end
 
@@ -859,6 +937,15 @@ end
 
 function reverse_weapon_hash(hash)
     return T.WeaponHashTable[hash] or ""
+end
+
+function table.contains(tbl, value)
+    for k, v in pairs(tbl) do
+        if v == value then
+            return true
+        end
+    end
+    return false
 end
 
 ----------------------------------------

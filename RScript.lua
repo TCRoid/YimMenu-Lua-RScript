@@ -26,6 +26,24 @@ require("RScript.functions")
 self = nil
 MainLoop = {} -- No Delay
 
+--------------------------------
+-- Locals
+--------------------------------
+
+Locals = {
+    ["fm_mission_controller"] = {
+        sFMMC_SBD = {
+            -- MC_serverBD_1.sFMMC_SBD.niVehicle[index]
+            niVehicle = 22960 + 834 + 81 + 1
+        }
+    },
+    ["fm_mission_controller_2020"] = {
+        sFMMC_SBD = {
+            -- MC_serverBD_1.sFMMC_SBD.niVehicle[index]
+            niVehicle = 53558 + 777 + 81 + 1
+        }
+    }
+}
 
 ----------------------------------------
 -- Menu: Main
@@ -725,6 +743,34 @@ menu_mission:add_button("主要目标掉落包裹 传送到我", function()
     end)
 end)
 
+local CayoPericoDoors = {
+    joaat("h4_prop_h4_gate_l_01a"),
+    joaat("h4_prop_h4_gate_r_01a"),
+    joaat("h4_prop_h4_gate_02a"),
+    joaat("h4_prop_h4_gate_03a"),
+    joaat("h4_prop_h4_gate_05a"),
+    joaat("v_ilev_garageliftdoor"),
+    joaat("h4_prop_office_elevator_door_01"),
+    joaat("h4_prop_h4_gate_r_03a"),
+    joaat("h4_prop_h4_gate_l_03a"),
+    joaat("prop_fnclink_02gate6_r"),
+    joaat("prop_fnclink_02gate6_l"),
+    joaat("h4_prop_h4_garage_door_01a"),
+    joaat("prop_fnclink_03gate5")
+}
+menu_mission:add_button("删除门 (仅本地)", function()
+    script.run_in_fiber(function()
+        for _, obj in pairs(entities.get_all_objects_as_handles()) do
+            local objHash = ENTITY.GET_ENTITY_MODEL(obj)
+            for __, hash in pairs(CayoPericoDoors) do
+                if objHash == hash then
+                    delete_entity(obj)
+                end
+            end
+        end
+    end)
+end)
+
 menu_mission:add_separator()
 
 ----------------
@@ -1061,20 +1107,47 @@ menu_mission:add_button("护送ULP直升机 无敌", function()
     end)
 end)
 
-menu_mission:add_separator()
 
-----------------
--- 管理任务载具
-----------------
 
-local heist_mission_vehicle = {
-    initialized = false,
-    can_show = false,
-    vehicle_list = {},
-    need_update_vehicle_list = false
+
+
+----------------------------------------
+-- Menu: Mission Vehicle
+----------------------------------------
+
+local menu_mission_vehicle <const> = menu_root:add_tab("[RS] 任务载具助手")
+
+local HeistMissionVehicle = {
+    vehicleList = {},
+    updateVehicleList = false,
+
+    replaceVehicles = {
+        { joaat("oppressor2"), get_label_text("oppressor2") },
+
+        { joaat("kuruma2"),    get_label_text("kuruma2") },
+        { joaat("toreador"),   get_label_text("toreador") },
+        { joaat("insurgent3"), get_label_text("insurgent3") },
+        { joaat("deluxo"),     get_label_text("deluxo") },
+        { joaat("vigilante"),  get_label_text("vigilante") },
+
+        { joaat("krieger"),    get_label_text("krieger") },
+        { joaat("t20"),        get_label_text("t20") },
+
+        { joaat("Lazer"),      get_label_text("Lazer") },
+        { joaat("hydra"),      get_label_text("hydra") },
+        { joaat("raiju"),      get_label_text("raiju") },
+        { joaat("buzzard"),    get_label_text("buzzard") },
+
+        { joaat("khanjali"),   get_label_text("khanjali") },
+        { joaat("phantom2"),   get_label_text("phantom2") },
+    },
+    replaceVehicleHash = {},
+    replaceVehicleList = {},
+
+    vehicleData = {}
 }
 
-function heist_mission_vehicle.get_vehicle_list()
+function HeistMissionVehicle.getVehicleList()
     local script_name = get_running_mission_controller_script()
     if script_name == nil then
         return {}
@@ -1091,7 +1164,7 @@ function heist_mission_vehicle.get_vehicle_list()
     return vehicle_list
 end
 
-function heist_mission_vehicle.get_driver_name(vehicle)
+function HeistMissionVehicle.getDriverName(vehicle)
     local driver = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1, false)
 
     if PED.IS_PED_A_PLAYER(driver) then
@@ -1102,148 +1175,288 @@ function heist_mission_vehicle.get_driver_name(vehicle)
     local driver_hash = ENTITY.GET_ENTITY_MODEL(driver)
     local driver_model = reverse_ped_hash(driver_hash)
     if driver_model == "" then
-        return driver_hash
+        return driver_hash .. " [NPC]"
     end
-    return driver_model
+    return driver_model .. " [NPC]"
 end
 
-menu_mission:add_button("快捷管理任务载具", function()
-    heist_mission_vehicle.can_show = not heist_mission_vehicle.can_show
-end)
-menu_mission:add_imgui(function()
-    if heist_mission_vehicle.can_show and ImGui.Begin("快捷管理任务载具") then
-        if not heist_mission_vehicle.initialized then
-            ImGui.SetWindowSize(450, 800)
-            heist_mission_vehicle.initialized = true
+function HeistMissionVehicle.getVehicleInfo(vehicle, index)
+    local title = index .. ". " .. get_vehicle_display_name(vehicle)
+    local textList = {}
+
+    if not VEHICLE.IS_VEHICLE_SEAT_FREE(vehicle, -1, false) then
+        table.insert(textList, "司机: " .. HeistMissionVehicle.getDriverName(vehicle))
+    end
+
+    local blip = HUD.GET_BLIP_FROM_ENTITY(vehicle)
+    if HUD.DOES_BLIP_EXIST(blip) then
+        local blip_sprite = HUD.GET_BLIP_SPRITE(blip)
+        if blip_sprite == 1 then
+            title = title .. " [目标点]"
+        else
+            title = title .. " [标记点]"
         end
 
-        if ImGui.Button("刷新列表", 200, 50) then
-            heist_mission_vehicle.need_update_vehicle_list = true
+        local blip_colour = HUD.GET_BLIP_COLOUR(blip)
+        if blip_colour == 54 then
+            table.insert(textList, "BLIP_COLOUR_BLUEDARK")
+        end
+    end
+
+    if vehicle == PED.GET_VEHICLE_PED_IS_IN(PLAYER.PLAYER_PED_ID(), false) then
+        if PED.IS_PED_IN_ANY_VEHICLE(PLAYER.PLAYER_PED_ID(), false) then
+            title = title .. " [当前载具]"
+        else
+            title = title .. " [上一辆载具]"
+        end
+    end
+
+    local owner = get_entity_owner(vehicle)
+    table.insert(textList, "控制权: " .. PLAYER.GET_PLAYER_NAME(owner))
+    table.insert(textList, "乘客数: " .. VEHICLE.GET_VEHICLE_NUMBER_OF_PASSENGERS(vehicle, false, false))
+
+    return title, textList
+end
+
+function HeistMissionVehicle.getNetIdAddr(vehicle, script_name)
+    local netId = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(vehicle)
+    if not NETWORK.NETWORK_DOES_NETWORK_ID_EXIST(netId) then
+        return 0
+    end
+
+    for i = 0, 31, 1 do
+        local addr = Locals[script_name].sFMMC_SBD.niVehicle + i
+        if locals.get_int(script_name, addr) == netId then
+            return addr
+        end
+    end
+
+    return 0
+end
+
+function HeistMissionVehicle.replaceVehicle(vehicle, hash)
+    local coords = ENTITY.GET_ENTITY_COORDS(vehicle)
+    local heading = ENTITY.GET_ENTITY_HEADING(vehicle)
+
+    -- 生成替换载具，先放到天上
+    local replaceVeh = VEHICLE.CREATE_VEHICLE(hash, coords.x, coords.y, coords.z + 2000, heading, true, true, false)
+    ENTITY.FREEZE_ENTITY_POSITION(replaceVeh, true)
+
+    ENTITY.SET_ENTITY_AS_MISSION_ENTITY(replaceVeh, true, false)
+
+    NETWORK.NETWORK_REGISTER_ENTITY_AS_NETWORKED(replaceVeh)
+    local netId = NETWORK.NETWORK_GET_NETWORK_ID_FROM_ENTITY(replaceVeh)
+    if not NETWORK.NETWORK_DOES_NETWORK_ID_EXIST(netId) then
+        -- 没有成功获得 net id
+        delete_entity(replaceVeh)
+        return 0
+    end
+
+    NETWORK.SET_NETWORK_ID_EXISTS_ON_ALL_MACHINES(netId, true)
+    NETWORK.SET_NETWORK_ID_CAN_MIGRATE(netId, true)
+    NETWORK.SET_NETWORK_ID_ALWAYS_EXISTS_FOR_PLAYER(netId, PLAYER.PLAYER_ID(), true)
+
+
+    strong_vehicle(replaceVeh)
+    upgrade_vehicle(replaceVeh)
+
+    -- 传送原载具到其它地方
+    ENTITY.DETACH_ENTITY(vehicle, false, false)
+    ENTITY.FREEZE_ENTITY_POSITION(vehicle, true)
+    ENTITY.SET_ENTITY_COLLISION(vehicle, false, false)
+    TP_ENTITY(vehicle, vec3:new(7000, 7000, -100))
+
+    -- 传送替换载具到原载具位置
+    TP_ENTITY(replaceVeh, coords)
+    ENTITY.FREEZE_ENTITY_POSITION(replaceVeh, false)
+
+    return netId
+end
+
+function HeistMissionVehicle.init()
+    for key, item in pairs(HeistMissionVehicle.replaceVehicles) do
+        HeistMissionVehicle.replaceVehicleHash[key] = item[1]
+        HeistMissionVehicle.replaceVehicleList[key] = item[2]
+    end
+end
+
+HeistMissionVehicle.init()
+
+menu_mission_vehicle:add_imgui(function()
+    if ImGui.Button("刷新载具列表", 320, 48) then
+        HeistMissionVehicle.updateVehicleList = true
+    end
+
+    -- 刷新载具列表
+    if HeistMissionVehicle.updateVehicleList then
+        HeistMissionVehicle.vehicleList = HeistMissionVehicle.getVehicleList()
+
+        HeistMissionVehicle.updateVehicleList = false
+        HeistMissionVehicle.vehicleData = {}
+    end
+
+    if next(HeistMissionVehicle.vehicleList) == nil then
+        return
+    end
+
+    for index, vehicle in pairs(HeistMissionVehicle.vehicleList) do
+        if not ENTITY.DOES_ENTITY_EXIST(vehicle) then
+            goto continue
         end
 
-        if heist_mission_vehicle.need_update_vehicle_list then
-            heist_mission_vehicle.vehicle_list = heist_mission_vehicle.get_vehicle_list()
-
-            heist_mission_vehicle.need_update_vehicle_list = false
+        -- 初始化每个载具的数据
+        if HeistMissionVehicle.vehicleData[index] == nil then
+            HeistMissionVehicle.vehicleData[index] = {
+                isDrawLine = false,
+                replaceVehicleSelect = 0
+            }
         end
 
-        if next(heist_mission_vehicle.vehicle_list) == nil then
-            return
-        end
+        -- 获取载具基本信息
+        local title, textList = HeistMissionVehicle.getVehicleInfo(vehicle, index)
 
-        for _, vehicle in pairs(heist_mission_vehicle.vehicle_list) do
-            if not ENTITY.DOES_ENTITY_EXIST(vehicle) then
-                return
-            end
-
-            local title = get_vehicle_display_name(vehicle)
-            local text = ""
-
-            if not VEHICLE.IS_VEHICLE_SEAT_FREE(vehicle, -1, false) then
-                text = text .. "司机: " .. heist_mission_vehicle.get_driver_name(vehicle) .. "\n"
-            end
-
-            local blip = HUD.GET_BLIP_FROM_ENTITY(vehicle)
-            if HUD.DOES_BLIP_EXIST(blip) then
-                local blip_sprite = HUD.GET_BLIP_SPRITE(blip)
-                if blip_sprite == 1 then
-                    title = title .. " [目标点]"
-                else
-                    title = title .. " [标记点]"
-                end
-
-                local blip_colour = HUD.GET_BLIP_COLOUR(blip)
-                if blip_colour == 54 then
-                    text = text .. "BLIP_COLOUR_BLUEDARK" .. "\n"
-                end
-            end
-
-            if vehicle == PED.GET_VEHICLE_PED_IS_IN(PLAYER.PLAYER_PED_ID(), false) then
-                if PED.IS_PED_IN_ANY_VEHICLE(PLAYER.PLAYER_PED_ID(), false) then
-                    title = title .. " [当前载具]"
-                else
-                    title = title .. " [上一辆载具]"
-                end
-            end
-
-            local owner = get_entity_owner(vehicle)
-            text = text .. "控制权: " .. PLAYER.GET_PLAYER_NAME(owner)
-
-
+        ImGui.Spacing()
+        if ImGui.TreeNode(title) then
             ImGui.Spacing()
-            if ImGui.TreeNode(title) then
-                ImGui.Spacing()
 
-                ImGui.Text(text)
+            for _, text in pairs(textList) do
+                ImGui.BulletText(text)
+            end
+            ImGui.Spacing()
 
-                ImGui.Spacing()
 
-                if ImGui.Button("请求控制", 150, 40) then
+            HeistMissionVehicle.vehicleData[index].isDrawLine = ImGui.Checkbox("绘制连线",
+                HeistMissionVehicle.vehicleData[index].isDrawLine)
+            if HeistMissionVehicle.vehicleData[index].isDrawLine then
+                draw_line_to_entity(vehicle)
+            end
+            ImGui.SameLine()
+            if ImGui.Button("请求控制", 96, 32) then
+                script.run_in_fiber(function()
                     if request_control(vehicle) then
                         toast("请求控制实体成功！")
                     else
                         toast("请求控制实体失败，请重试")
                     end
-                end
-
-                if ImGui.Button("无敌") then
-                    set_entity_godmode(vehicle, true)
-                end
-                ImGui.SameLine()
-                if ImGui.Button("强化") then
-                    strong_vehicle(vehicle)
-                end
-                ImGui.SameLine()
-                if ImGui.Button("升级") then
-                    upgrade_vehicle(vehicle)
-                end
-
-                if ImGui.Button("传送到 我 并进入驾驶位") then
-                    local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)
-                    if ENTITY.IS_ENTITY_A_PED(ped) then
-                        set_entity_move(ped, 0.0, 0.0, 3.0)
-                    end
-                    ENTITY_HEADING(vehicle, user_heading())
-                    tp_entity_to_me(vehicle)
-                    PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -1)
-                end
-
-                if ImGui.Button("传送到 驾驶位") then
-                    local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1)
-                    if ENTITY.IS_ENTITY_A_PED(ped) then
-                        set_entity_move(ped, 0.0, 0.0, 3.0)
-                    end
-                    PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -1)
-                end
-                ImGui.SameLine()
-                if ImGui.Button("传送到 副驾驶位") then
-                    if VEHICLE.GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS(vehicle) > 0 then
-                        local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, 0)
-                        if ENTITY.IS_ENTITY_A_PED(ped) then
-                            set_entity_move(ped, 0.0, 0.0, 3.0)
-                        end
-                        PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, 0)
-                    else
-                        toast("载具无副驾驶位")
-                    end
-                end
-                ImGui.SameLine()
-                if ImGui.Button("传送到 空座位") then
-                    if VEHICLE.ARE_ANY_VEHICLE_SEATS_FREE(vehicle) then
-                        PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -2)
-                    else
-                        toast("载具已无空座位")
-                    end
-                end
-
-
-                ImGui.Spacing()
-                ImGui.Separator()
-                ImGui.TreePop()
+                end)
             end
+
+            if ImGui.Button("无敌") then
+                set_entity_godmode(vehicle, true)
+            end
+            ImGui.SameLine()
+            if ImGui.Button("强化") then
+                strong_vehicle(vehicle)
+            end
+            ImGui.SameLine()
+            if ImGui.Button("升级") then
+                upgrade_vehicle(vehicle)
+            end
+
+            if ImGui.Button("传送到 我并驾驶") then
+                local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(ent, -1)
+                if ENTITY.IS_ENTITY_A_PED(ped) then
+                    set_entity_move(ped, 0.0, 0.0, 3.0)
+                end
+                ENTITY_HEADING(vehicle, user_heading())
+                tp_entity_to_me(vehicle)
+                PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -1)
+            end
+
+            if ImGui.Button("传送进 驾驶位") then
+                local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, -1)
+                if ENTITY.IS_ENTITY_A_PED(ped) then
+                    set_entity_move(ped, 0.0, 0.0, 3.0)
+                end
+                PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -1)
+            end
+            ImGui.SameLine()
+            if ImGui.Button("传送进 副驾驶位") then
+                if VEHICLE.GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS(vehicle) > 0 then
+                    local ped = VEHICLE.GET_PED_IN_VEHICLE_SEAT(vehicle, 0)
+                    if ENTITY.IS_ENTITY_A_PED(ped) then
+                        set_entity_move(ped, 0.0, 0.0, 3.0)
+                    end
+                    PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, 0)
+                else
+                    toast("载具无副驾驶位")
+                end
+            end
+            ImGui.SameLine()
+            if ImGui.Button("传送进 空座位") then
+                if VEHICLE.ARE_ANY_VEHICLE_SEATS_FREE(vehicle) then
+                    PED.SET_PED_INTO_VEHICLE(PLAYER.PLAYER_PED_ID(), vehicle, -2)
+                else
+                    toast("载具已无空座位")
+                end
+            end
+
+            ImGui.Spacing()
+
+            HeistMissionVehicle.vehicleData[index].replaceVehicleSelect = ImGui.Combo("选择替换载具",
+                HeistMissionVehicle.vehicleData[index].replaceVehicleSelect,
+                HeistMissionVehicle.replaceVehicleList, 14, 5)
+
+            if ImGui.Button("替换载具", 128, 32) then
+                script.run_in_fiber(function(script_util)
+                    if is_any_player_in_vehicle(vehicle) then
+                        notify("替换载具", "有玩家在该载具内")
+                        return
+                    end
+
+                    local script_name = get_running_mission_controller_script()
+
+                    if NETWORK.NETWORK_GET_HOST_OF_SCRIPT(script_name, 0, 0) ~= PLAYER.PLAYER_ID() then
+                        network.force_script_host(script_name)
+                        script_util:yield()
+                        if NETWORK.NETWORK_GET_HOST_OF_SCRIPT(script_name, 0, 0) ~= PLAYER.PLAYER_ID() then
+                            notify("替换载具", "成为脚本主机失败，请重试")
+                            return
+                        end
+                    end
+
+                    if not request_control(vehicle) then
+                        notify("替换载具", "请求控制载具失败，请重试")
+                        return
+                    end
+
+
+                    local hash = HeistMissionVehicle.replaceVehicleHash
+                        [HeistMissionVehicle.vehicleData[index].replaceVehicleSelect + 1]
+
+                    STREAMING.REQUEST_MODEL(hash)
+                    while not STREAMING.HAS_MODEL_LOADED(hash) do
+                        STREAMING.REQUEST_MODEL(hash)
+                        script_util:yield()
+                    end
+
+                    script.execute_as_script(script_name, function()
+                        local netIdAddr = HeistMissionVehicle.getNetIdAddr(vehicle, script_name)
+                        if netIdAddr == 0 then
+                            return
+                        end
+
+                        local netId = HeistMissionVehicle.replaceVehicle(vehicle, hash)
+                        if netId == 0 then
+                            return
+                        end
+
+                        locals.set_int(script_name, netIdAddr, netId)
+                        notify("替换载具", "完成！")
+                    end)
+
+                    STREAMING.SET_MODEL_AS_NO_LONGER_NEEDED(hash)
+                end)
+            end
+
+
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.TreePop()
         end
 
-        ImGui.End()
+
+        ::continue::
     end
 end)
 
