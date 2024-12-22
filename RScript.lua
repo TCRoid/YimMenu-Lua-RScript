@@ -1,8 +1,9 @@
---------------------------------
+----------------------------------------------------------------
 -- Author: Rostal
---------------------------------
+-- Github: https://github.com/TCRoid/YimMenu-Lua-RScript
+----------------------------------------------------------------
 
-local SUPPORT_GAME_VERSION <const> = "1.69-3274"
+local SUPPORT_GAME_VERSION <const> = "1.70-3411"
 
 --#region check game version
 
@@ -34,15 +35,15 @@ Locals = {
     ["fm_mission_controller"] = {
         sFMMC_SBD = {
             -- MC_serverBD_1.sFMMC_SBD.niVehicle[index]
-            niVehicle = 22960 + 834 + 81 + 1
-        }
+            niVehicle = 22995 + 834 + 81 + 1
+        },
     },
     ["fm_mission_controller_2020"] = {
         sFMMC_SBD = {
             -- MC_serverBD_1.sFMMC_SBD.niVehicle[index]
-            niVehicle = 53558 + 777 + 81 + 1
-        }
-    }
+            niVehicle = 55623 + 777 + 81 + 1
+        },
+    },
 }
 
 ----------------------------------------
